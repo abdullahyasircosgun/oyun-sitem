@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Neon Galaxy Defender - Fixed</title>
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap');
+
+    body {
+        margin: 0;
+        overflow: hidden;
+        background: #050505;
+        color: #fff;
+        font-family: 'Rajdhani', sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        user-select: none;
+    }
+
+    #game-container {
+        position: relative;
+        width: 800px;
+        height: 600px;
+        box-shadow: 0 0 50px rgba(0, 255, 255, 0.2);
+        border: 2px solid #0ff;
+        background: radial-gradient(circle at center, #1a1a2e 0%, #000000 100%);
+    }
+
+    canvas {
+        display: block;
+        cursor: crosshair;
+    }
+
+    /* Arayüz Katmanları */
+    .ui-layer {
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        pointer-events: none;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 20px;
+        box-sizing: border-box;
+    }
+
+    /* HUD */
+    #hud-top {
+        display: flex;
+        justify-content: space-between;
+        font-size: 1.5rem;
+        text-shadow: 0 0 10px #0ff;
+    }
+    .hud-item span { color: #ff0; font-weight: bold;}
+
+    /* Menüler */
+    #menu-overlay, #shop-overlay {
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.85);
+        backdrop-filter: blur(5px);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 10;
+        pointer-events: auto;
+    }
+    
+    .hidden { display: none !important; }
+
+    h1 { font-size: 4rem; margin: 0; color: #0ff; text-shadow: 0 0 20px #0ff; }
+    h2 { font-size: 2.5rem; color: #ff0; text-shadow: 0 0 15px #ff0; margin-bottom: 30px;}
+
+    .btn {
+        background: linear-gradient(45deg, #0ff, #00aaff);
+        border: none; padding: 15px 40px;
+        font-family: 'Rajdhani', sans-serif; font-size: 1.5rem; font-weight: 700;
+        color: #000; cursor: pointer; clip-path: polygon(10% 0, 100% 0, 90% 100%, 0 100%);
+        transition: all 0.2s; margin-top: 20px;
+        text-transform: uppercase;
+    }
+    .btn:hover { transform: scale(1.1); box-shadow: 0 0 30px #0ff; color: white;}
+    .btn-start { background: linear-gradient(45deg, #ff0055, #ff5500); box-shadow: 0 0 20px #ff0055;}
+    
+    .shop-container { display: flex; gap: 20px; margin-bottom: 30px; }
+    .shop-item {
+        background: rgba(0, 255, 255, 0.1); border: 2px solid #0ff; padding: 20px;
+        text-align: center; width: 180px; transition: 0.3s;
+    }
+    .shop-item:hover { background: rgba(0, 255, 255, 0.3); }
+    .shop-title { font-size: 1.2rem; color: #0ff; margin-bottom: 10px;}
+    .shop-cost { font-size: 1.1rem; color: #ff0; margin-bottom: 15px;}
+    .btn-buy { padding: 5px 20px; font-size: 1rem; clip-path: none; width: 100%;}
+    .btn-buy.disabled { background: #555; color: #888; pointer-events: none; box-shadow: none;}
+
+    #shop-currency { font-size: 2rem; color: #ff0; margin-bottom: 20px;}
+</style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <div class="ui-layer" id="game-ui">
+        <div id="hud-top">
+            <div class="hud-item">SKOR: <span id="score-el">0</span></div>
+            <div class="hud-item">DALGA: <span id="wave-el">1</span></div>
+            <div class="hud-item">PARA: <span id="currency-el">0</span></div>
+        </div>
+    </div>
+
+    <div id="menu-overlay">
+        <h1 id="menu-title">NEON GALAXY</h1>
+        <p id="menu-subtitle" style="font-size: 1.2rem; color:#aaa;">WASD: Hareket | BOŞLUK: Ateş</p>
+        <button class="btn btn-start" onclick="startGame()">OYUNA BAŞLA</button>
+    </div>
+
+    <div id="shop-overlay" class="hidden">
+        <h2>MAĞAZA</h2>
+        <div id="shop-currency">PARA: <span id="shop-currency-el">0</span></div>
+        <div class="shop-container">
+            <div class="shop-item">
+                <div class="shop-title">SİLAH GÜCÜ</div>
+                <div class="shop-cost" id="cost-dmg">Maliyet: 50</div>
+                <button class="btn btn-buy" id="btn-buy-dmg" onclick="buyUpgrade('damage')">SATIN AL</button>
+            </div>
+             <div class="shop-item">
+                <div class="shop-title">ATIŞ HIZI</div>
+                <div class="shop-cost" id="cost-rate">Maliyet: 80</div>
+                <button class="btn btn-buy" id="btn-buy-rate" onclick="buyUpgrade('rate')">SATIN AL</button>
+            </div>
+             <div class="shop-item">
+                <div class="shop-title">GEMİ ZIRHI</div>
+                <div class="shop-cost" id="cost-hp">Maliyet: 100</div>
+                <button class="btn btn-buy" id="btn-buy-hp" onclick="buyUpgrade('hp')">SATIN AL</button>
+            </div>
+        </div>
+        <button class="btn" onclick="nextWave()">SONRAKİ DALGA >></button>
+    </div>
+</div>
+
+<script>
+// --- GLOBAL DEĞİŞKENLER ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const WIDTH = canvas.width;
+const HEIGHT = canvas.height;
+
+// UI
+const menuOverlay = document.getElementById('menu-overlay');
+const shopOverlay = document.getElementById('shop-overlay');
+const menuTitle = document.getElementById('menu-title');
+const scoreEl = document.getElementById('score-el');
+const waveEl = document.getElementById('wave-el');
+const currencyEl = document.getElementById('currency-el');
+const shopCurrencyEl = document.getElementById('shop-currency-el');
+const btnBuyDmg = document.getElementById('btn-buy-dmg');
+const btnBuyRate = document.getElementById('btn-buy-rate');
+const btnBuyHp = document.getElementById('btn-buy-hp');
+const costDmgEl = document.getElementById('cost-dmg');
+const costRateEl = document.getElementById('cost-rate');
+const costHpEl = document.getElementById('cost-hp');
+
+// Oyun Durumu
+let gameState = 'MENU';
+let gameFrameId; // HATA BURADAYDI, DÜZELTİLDİ
+let lastTime = 0;
+let score = 0;
+let currency = 0;
+let wave = 0;
+
+let player;
+let bullets = [];
+let enemyBullets = [];
+let enemies = [];
+let particles = [];
+let screenShake = 0;
+
+const keys = { w: false, a: false, s: false, d: false, space: false };
+
+const upgrades = {
+    damage: { level: 1, cost: 50, multiplier: 1.5 },
+    rate: { level: 1, cost: 80, multiplier: 1.4 },
+    hp: { level: 1, cost: 100, multiplier: 1.3 }
+};
+
+// --- SINIFLAR ---
+class Player {
+    constructor() {
+        this.width = 30; this.height = 40;
+        this.x = WIDTH / 2 - this.width / 2; this.y = HEIGHT - 100;
+        this.speed = 300; this.maxHp = 100; this.hp = this.maxHp;
+        this.lastShotTime = 0;
+        this.damage = 10; this.fireRate = 250;
+    }
+    update(dt) {
+        if ((keys.w || keys.ArrowUp) && this.y > 0) this.y -= this.speed * dt;
+        if ((keys.s || keys.ArrowDown) && this.y < HEIGHT - this.height) this.y += this.speed * dt;
+        if ((keys.a || keys.ArrowLeft) && this.x > 0) this.x -= this.speed * dt;
+        if ((keys.d || keys.ArrowRight) && this.x < WIDTH - this.width) this.x += this.speed * dt;
+
+        if (keys.space) {
+            const now = Date.now();
+            if (now - this.lastShotTime > this.fireRate) {
+                this.shoot();
+                this.lastShotTime = now;
+            }
+        }
+        if(Math.random() > 0.5) {
+             particles.push(new Particle(this.x + this.width/2, this.y + this.height, (Math.random()-0.5)*20, Math.random()*50 + 50, '#0ff', 2, 0.5));
+        }
+    }
+    shoot() {
+        bullets.push(new Bullet(this.x + this.width / 2 - 2.5, this.y, -600, this.damage, '#ff0'));
+        this.y += 2; 
+    }
+    draw() {
+        ctx.save();
+        ctx.fillStyle = '#000'; ctx.strokeStyle = '#0ff'; ctx.lineWidth = 2;
+        ctx.shadowBlur = 15; ctx.shadowColor = '#0ff';
+        ctx.beginPath();
+        ctx.moveTo(this.x + this.width / 2, this.y);
+        ctx.lineTo(this.x + this.width, this.y + this.height);
+        ctx.lineTo(this.x, this.y + this.height);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        
+        const hpBarWidth = this.width + 20;
+        const hpPercent = Math.max(0, this.hp / this.maxHp);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#333'; ctx.fillRect(this.x - 10, this.y + this.height + 10, hpBarWidth, 5);
+        ctx.fillStyle = hpPercent > 0.5 ? '#0f0' : hpPercent > 0.2 ? '#ff0' : '#f00';
+        ctx.fillRect(this.x - 10, this.y + this.height + 10, hpBarWidth * hpPercent, 5);
+        ctx.restore();
+    }
+    takeDamage(amount) {
+        this.hp -= amount;
+        screenShake = 10;
+        createExplosion(this.x + this.width/2, this.y + this.height/2, 20, '#f00');
+        if (this.hp <= 0) gameOver();
+    }
+}
+
+class Bullet {
+    constructor(x, y, speedY, damage, color) {
+        this.x = x; this.y = y; this.width = 5; this.height = 15;
+        this.speedY = speedY; this.damage = damage; this.color = color;
+        this.markedForDeletion = false;
+    }
+    update(dt) {
+        this.y += this.speedY * dt;
+        if (this.y < -50 || this.y > HEIGHT + 50) this.markedForDeletion = true;
+    }
+    draw() {
+        ctx.save(); ctx.fillStyle = this.color;
+        ctx.shadowBlur = 10; ctx.shadowColor = this.color;
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.restore();
+    }
+}
+
+class Enemy {
+    constructor(x, y, p) {
+        this.x = x; this.y = y;
+        this.width = p.width; this.height = p.height;
+        this.speedY = p.speedY; this.hp = p.hp; this.color = p.color;
+        this.value = p.value; this.markedForDeletion = false;
+        this.type = p.type;
+        this.canShoot = p.canShoot || false;
+        this.lastShot = 0; this.shotInterval = p.shotInterval || 2000;
+        this.startX = x; this.zigzagRange = p.zigzagRange || 0;
+    }
+    update(dt) {
+        this.y += this.speedY * dt;
+        if(this.zigzagRange > 0) this.x = this.startX + Math.sin(Date.now() / 300) * this.zigzagRange;
+        
+        if(this.canShoot && Date.now() - this.lastShot > this.shotInterval && this.y > 50 && this.y < HEIGHT/2) {
+            enemyBullets.push(new Bullet(this.x + this.width/2, this.y + this.height, 300, 10, '#f0f'));
+            this.lastShot = Date.now();
+        }
+        if (this.y > HEIGHT) this.markedForDeletion = true;
+    }
+    draw() {
+        ctx.save(); ctx.fillStyle = '#111'; ctx.strokeStyle = this.color; ctx.lineWidth = 3;
+        ctx.shadowBlur = 10; ctx.shadowColor = this.color;
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.strokeRect(this.x, this.y, this.width, this.height);
+        ctx.restore();
+    }
+    takeDamage(dmg) {
+        this.hp -= dmg;
+        createExplosion(this.x+this.width/2, this.y+this.height/2, 5, this.color);
+        if (this.hp <= 0) this.die();
+    }
+    die() {
+        this.markedForDeletion = true;
+        score += this.value * 10; currency += this.value;
+        createExplosion(this.x + this.width / 2, this.y + this.height / 2, 30, this.color);
+        scoreEl.innerText = score; currencyEl.innerText = currency;
+        screenShake = 5;
+    }
+}
+
+class Particle {
+    constructor(x, y, vx, vy, color, size, life) {
+        this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+        this.color = color; this.size = size; this.life = life; this.opacity = 1;
+    }
+    update(dt) {
+        this.x += this.vx * dt; this.y += this.vy * dt;
+        this.life -= dt; this.opacity = this.life > 0 ? this.life : 0;
+    }
+    draw() {
+        ctx.save(); ctx.globalAlpha = this.opacity; ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, this.size, this.size);
+        ctx.restore();
+    }
+}
+
+// --- FONKSİYONLAR ---
+function createExplosion(x, y, count, color) {
+    for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 200 + 50;
+        particles.push(new Particle(x, y, Math.cos(angle)*speed, Math.sin(angle)*speed, color, Math.random()*5+2, Math.random()*0.5+0.2));
+    }
+}
+
+function checkCollision(r1, r2) {
+    return (r1.x < r2.x + r2.width && r1.x + r1.width > r2.x && r1.y < r2.y + r2.height && r1.y + r1.height > r2.y);
+}
+
+function init() {
+    window.addEventListener('keydown', e => toggleKey(e.key, true));
+    window.addEventListener('keyup', e => toggleKey(e.key, false));
+    ctx.fillStyle = '#000'; ctx.fillRect(0,0,WIDTH, HEIGHT);
+}
+
+function toggleKey(key, isPressed) {
+    if (key === 'w' || key === 'ArrowUp') keys.w = isPressed;
+    if (key === 's' || key === 'ArrowDown') keys.s = isPressed;
+    if (key === 'a' || key === 'ArrowLeft') keys.a = isPressed;
+    if (key === 'd' || key === 'ArrowRight') keys.d = isPressed;
+    if (key === ' ' || key === ' ') keys.space = isPressed;
+}
+
+function startGame() {
+    score = 0; currency = 0; wave = 0;
+    bullets = []; enemyBullets = []; enemies = []; particles = [];
+    scoreEl.innerText = score; currencyEl.innerText = currency;
+    
+    upgrades.damage.level = 1; upgrades.damage.cost = 50;
+    upgrades.rate.level = 1; upgrades.rate.cost = 80;
+    upgrades.hp.level = 1; upgrades.hp.cost = 100;
+
+    player = new Player();
+    menuOverlay.classList.add('hidden');
+    gameState = 'PLAYING';
+    lastTime = Date.now();
+    nextWave();
+    if(gameFrameId) cancelAnimationFrame(gameFrameId);
+    requestAnimationFrame(gameLoop);
+}
+
+function nextWave() {
+    wave++;
+    waveEl.innerText = wave;
+    gameState = 'PLAYING';
+    shopOverlay.classList.add('hidden');
+    
+    let enemyCount = 5 + wave * 2; 
+    const hpMultiplier = 1 + (wave * 0.2);
+    const speedMultiplier = 1 + (wave * 0.1);
+
+    for (let i = 0; i < enemyCount; i++) {
+        const x = Math.random() * (WIDTH - 50);
+        const y = -Math.random() * 1000 - 50;
+        let p; const r = Math.random();
+        
+        if (r < 0.6) p = { type: 'grunt', width: 40, height: 40, speedY: 100*speedMultiplier, hp: 30*hpMultiplier, color: '#f00', value: 10 };
+        else if (r < 0.85) p = { type: 'speeder', width: 30, height: 30, speedY: 200*speedMultiplier, zigzagRange: 100, hp: 20*hpMultiplier, color: '#ff0', value: 20 };
+        else p = { type: 'shooter', width: 50, height: 50, speedY: 60*speedMultiplier, canShoot:true, shotInterval: 1500, hp: 50*hpMultiplier, color: '#f0f', value: 30 };
+        enemies.push(new Enemy(x, y, p));
+    }
+}
+
+function gameOver() {
+    gameState = 'GAMEOVER';
+    menuTitle.innerText = "OYUN BİTTİ";
+    menuTitle.style.color = "#f00";
+    document.getElementById('menu-subtitle').innerText = `SKOR: ${score} - DALGA: ${wave}`;
+    document.querySelector('.btn-start').innerText = "TEKRAR DENE";
+    menuOverlay.classList.remove('hidden');
+}
+
+function openShop() {
+    gameState = 'SHOP';
+    shopOverlay.classList.remove('hidden');
+    updateShopUI();
+    player.hp = player.maxHp;
+}
+
+function updateShopUI() {
+    shopCurrencyEl.innerText = currency;
+    costDmgEl.innerText = `Seviye ${upgrades.damage.level} - ${Math.floor(upgrades.damage.cost)} Para`;
+    costRateEl.innerText = `Seviye ${upgrades.rate.level} - ${Math.floor(upgrades.rate.cost)} Para`;
+    costHpEl.innerText = `Seviye ${upgrades.hp.level} - ${Math.floor(upgrades.hp.cost)} Para`;
+
+    btnBuyDmg.classList.toggle('disabled', currency < upgrades.damage.cost);
+    btnBuyRate.classList.toggle('disabled', currency < upgrades.rate.cost);
+    btnBuyHp.classList.toggle('disabled', currency < upgrades.hp.cost);
+}
+
+function buyUpgrade(type) {
+    const u = upgrades[type];
+    if (currency >= u.cost) {
+        currency -= u.cost;
+        u.level++; u.cost *= u.multiplier;
+        if (type === 'damage') player.damage += 10;
+        if (type === 'rate') player.fireRate *= 0.85;
+        if (type === 'hp') { player.maxHp += 50; player.hp += 50; }
+        updateShopUI(); currencyEl.innerText = Math.floor(currency);
+    }
+}
+
+function gameLoop() {
+    const now = Date.now();
+    let dt = (now - lastTime) / 1000;
+    lastTime = now;
+    if (dt > 0.1) dt = 0.1;
+
+    if (gameState === 'PLAYING') update(dt);
+    draw();
+    if (gameState !== 'MENU' && gameState !== 'GAMEOVER') requestAnimationFrame(gameLoop);
+}
+
+function update(dt) {
+    player.update(dt);
+    bullets.forEach(b => b.update(dt));
+    enemyBullets.forEach(b => b.update(dt));
+    enemies.forEach(e => e.update(dt));
+    particles.forEach(p => p.update(dt));
+
+    bullets.forEach(b => {
+        enemies.forEach(e => {
+            if (!b.markedForDeletion && !e.markedForDeletion && checkCollision(b, e)) {
+                b.markedForDeletion = true; e.takeDamage(b.damage);
+            }
+        });
+    });
+
+    enemyBullets.forEach(b => {
+        if(!b.markedForDeletion && checkCollision(b, player)) {
+            b.markedForDeletion = true; player.takeDamage(b.damage);
+        }
+    });
+
+    enemies.forEach(e => {
+        if (!e.markedForDeletion && checkCollision(e, player)) {
+            e.die(); player.takeDamage(30);
+        }
+    });
+
+    bullets = bullets.filter(b => !b.markedForDeletion);
+    enemyBullets = enemyBullets.filter(b => !b.markedForDeletion);
+    enemies = enemies.filter(e => !e.markedForDeletion);
+    particles = particles.filter(p => p.life > 0);
+
+    if (screenShake > 0) screenShake *= 0.9;
+    if (screenShake < 0.1) screenShake = 0;
+
+    if (enemies.length === 0 && gameState === 'PLAYING') setTimeout(openShop, 500);
+}
+
+function draw() {
+    ctx.save();
+    let dx = Math.random() * screenShake - screenShake / 2;
+    let dy = Math.random() * screenShake - screenShake / 2;
+    ctx.translate(dx, dy);
+
+    ctx.fillStyle = 'rgba(5, 5, 15, 0.8)';
+    ctx.fillRect(-10, -10, WIDTH+20, HEIGHT+20);
+
+    particles.forEach(p => p.draw());
+    enemies.forEach(e => e.draw());
+    bullets.forEach(b => b.draw());
+    enemyBullets.forEach(b => b.draw());
+    if (gameState === 'PLAYING' || gameState === 'SHOP') player.draw();
+
+    ctx.restore();
+}
+
+init();
+</script>
+</body>
+</html>

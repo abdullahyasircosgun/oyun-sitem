@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Cephe Hattı: Sorunsuz Final</title>
+    <style>
+        body {
+            margin: 0; overflow: hidden; background-color: #0d0d0d; color: #eee;
+            font-family: 'Courier New', monospace;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center; height: 100vh;
+        }
+        canvas { 
+            background-color: #151515; 
+            border-top: 2px solid #333; 
+            border-bottom: 2px solid #333; 
+        }
+        #ui-header {
+            width: 1200px; display: flex; justify-content: space-between; padding: 5px 20px;
+            background: #111; border-bottom: 1px solid #333; height: 90px; box-sizing: border-box;
+        }
+        .player-panel { width: 350px; }
+        .stat-row { font-size: 14px; margin-bottom: 2px; display: flex; justify-content: space-between; }
+        .gold { color: #f1c40f; font-weight: bold; font-size: 16px; }
+        .warn { color: #e74c3c; display: none; font-weight: bold;}
+        
+        .bar-bg { width: 100%; height: 6px; background: #333; margin-top: 4px; }
+        .bar-fill { height: 100%; width: 0%; background: #666; }
+
+        #controls {
+            width: 1200px; display: flex; justify-content: space-between; padding: 5px 20px;
+            background: #111; font-size: 12px; color: #666; border-top: 1px solid #333;
+        }
+        .k { color: #fff; border:1px solid #444; padding:1px 4px; margin-right:2px; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-header">
+        <div class="player-panel">
+            <div style="color:#3498db">SOL KOMUTAN <span id="p1-warn" class="warn">DOLU!</span></div>
+            <div class="stat-row"><span>HP:<span id="p1-hp">3000</span></span> <span class="gold"><span id="p1-gold">150</span> (+<span id="p1-inc">15</span>)</span></div>
+            <div class="stat-row"><span>Asker:<span id="p1-pop">0</span>/60</span> <span>Maden:<span id="p1-mine">0</span></span></div>
+            <div class="bar-bg"><div id="p1-bar" class="bar-fill"></div></div>
+        </div>
+
+        <div style="opacity:0.2; align-self:center;"><h2>VS</h2></div>
+
+        <div class="player-panel" style="text-align: right;">
+            <div style="color:#e74c3c">SAĞ KOMUTAN <span id="p2-warn" class="warn">DOLU!</span></div>
+            <div class="stat-row"><span class="gold">(+<span id="p2-inc">15</span>) <span id="p2-gold">150</span></span> <span>HP:<span id="p2-hp">3000</span></span></div>
+            <div class="stat-row"><span>Maden:<span id="p2-mine">0</span></span> <span>Asker:<span id="p2-pop">0</span>/60</span></div>
+            <div class="bar-bg"><div id="p2-bar" class="bar-fill" style="float:right"></div></div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas" width="1200" height="600"></canvas>
+
+    <div id="controls">
+        <div>
+            <span class="k">Q</span>Tüfek <span class="k">W</span>Sniper <span class="k">E</span>Tank <span class="k" style="color:#d63031">A</span>KOMANDO <span class="k" style="color:#00b894">S</span>TİTAN | <span class="k">R</span>Maden <span class="k">F</span>Hava
+        </div>
+        <div>
+            Hava<span class="k">0</span> Maden<span class="k">+</span> | <span class="k" style="color:#d63031">4</span>KOMANDO <span class="k" style="color:#00b894">5</span>TİTAN <span class="k">7</span>Tüfek <span class="k">8</span>Sniper <span class="k">9</span>Tank
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const W = 1200, H = 600, BASE_W = 100, MAX_POP = 60;
+
+    // --- BİRİM AYARLARI (SNIPER HASARI DÜŞÜRÜLDÜ) ---
+    const UNITS = {
+        rifle:    { cost: 50,  hp: 100, dmg: 12, rng: 180, spd: 1.4, aspd: 35,  sz: 10, col: '#3498db' },
+        sniper:   { cost: 120, hp: 50,  dmg: 40, rng: 450, spd: 1.0, aspd: 90,  sz: 9,  col: '#f1c40f' }, // Hasar 80 -> 40
+        tank:     { cost: 150, hp: 450, dmg: 20, rng: 70,  spd: 0.8, aspd: 50,  sz: 16, col: '#95a5a6' },
+        commando: { cost: 80,  hp: 90,  dmg: 10, rng: 120, spd: 2.2, aspd: 12,  sz: 8,  col: '#ff7675' },
+        titan:    { cost: 300, hp: 1500,dmg: 40, rng: 50,  spd: 0.4, aspd: 70,  sz: 22, col: '#00b894' }
+    };
+
+    let game = {
+        over: false, frame: 0, projs: [],
+        p1: { hp: 3000, max: 3000, gold: 150, inc: 15, en: 0, units: [], team: 1, col: '#3498db', sx: 120, mine: 0 },
+        p2: { hp: 3000, max: 3000, gold: 150, inc: 15, en: 0, units: [], team: 2, col: '#e74c3c', sx: W-120, mine: 0 }
+    };
+
+    function distSq(x1, y1, x2, y2) { return (x2-x1)**2 + (y2-y1)**2; }
+
+    function spawn(p, type) {
+        if (game.over || p.units.length >= MAX_POP) return;
+        let s = UNITS[type];
+        if (p.gold >= s.cost) {
+            p.gold -= s.cost;
+            p.units.push({
+                x: p.sx, y: Math.random()*(H-40)+20,
+                type: type, hp: s.hp, max: s.hp, dmg: s.dmg, rng: s.rng,
+                spd: s.spd, aspd: s.aspd, cd: 0, sz: s.sz, col: s.col, team: p.team
+            });
+        }
+    }
+
+    function mine(p) {
+        if (!game.over && p.gold >= 150) {
+            p.gold -= 150; p.inc += 5; p.mine++;
+        }
+    }
+
+    function airStrike(p, enP) {
+        if (!game.over && p.en >= 100) {
+            p.en = 0;
+            enP.units.forEach(u => u.hp -= 50);
+            ctx.fillStyle = "rgba(255,0,0,0.3)";
+            ctx.fillRect(0,0,W,H);
+        }
+    }
+
+    function update() {
+        if (game.over) return;
+        game.frame++;
+
+        if (game.frame % 60 === 0) {
+            game.p1.gold += game.p1.inc; game.p2.gold += game.p2.inc;
+            if(game.p1.en < 100) game.p1.en++; if(game.p2.en < 100) game.p2.en++;
+        }
+
+        updUnits(game.p1, game.p2);
+        updUnits(game.p2, game.p1);
+        updProjs();
+        updUI();
+
+        if (game.p1.hp <= 0) end("KIRMIZI KAZANDI");
+        if (game.p2.hp <= 0) end("MAVİ KAZANDI");
+    }
+
+    function updUnits(ally, enemy) {
+        for (let i = ally.units.length - 1; i >= 0; i--) {
+            let u = ally.units[i];
+            if (u.hp <= 0) { ally.units.splice(i, 1); continue; }
+            if (u.cd > 0) u.cd--;
+
+            let tar = null, min = Infinity;
+            if (enemy.units.length > 0) {
+                let limit = Math.min(enemy.units.length, 10);
+                for(let k=0; k<limit; k++) {
+                    let e = enemy.units[k];
+                    let d = distSq(u.x, u.y, e.x, e.y);
+                    if (d < min) { min = d; tar = e; }
+                }
+            }
+
+            let bx = ally.team===1 ? W-BASE_W : BASE_W;
+            let db = distSq(u.x, u.y, bx, H/2);
+            if (!tar || db < min) { tar = {x:bx, y:H/2, sz:50, base:true}; min = db; }
+
+            let rngSq = (u.rng + tar.sz)**2;
+            if (min <= rngSq) {
+                if (u.cd <= 0) {
+                    game.projs.push({
+                        x: u.x, y: u.y, tx: tar.x, ty: tar.y,
+                        spd: u.type==='sniper'?20:10, dmg: u.dmg, team: u.team,
+                        col: u.type==='sniper'?'#fff':'#ffeb3b',
+                        life: 80
+                    });
+                    u.cd = u.aspd;
+                }
+            } else {
+                let ang = Math.atan2(tar.y - u.y, tar.x - u.x);
+                u.x += Math.cos(ang) * u.spd;
+                u.y += Math.sin(ang) * u.spd;
+            }
+            if(u.y < 10) u.y = 10; if(u.y > H-10) u.y = H-10;
+        }
+    }
+
+    function updProjs() {
+        for (let i = game.projs.length - 1; i >= 0; i--) {
+            let p = game.projs[i];
+            p.life--;
+            if (p.life <= 0) { game.projs.splice(i, 1); continue; }
+
+            let ang = Math.atan2(p.ty - p.y, p.tx - p.x);
+            p.x += Math.cos(ang) * p.spd;
+            p.y += Math.sin(ang) * p.spd;
+
+            let en = p.team===1 ? game.p2 : game.p1;
+            let hit = false;
+            
+            // Çarpışma Kontrolü (Daha Hassas)
+            // Önce askerlere bak
+            for(let u of en.units) {
+                // Basit kare çarpışması (Çok hızlı)
+                if (Math.abs(p.x - u.x) < u.sz + 5 && Math.abs(p.y - u.y) < u.sz + 5) {
+                    u.hp -= p.dmg;
+                    hit = true;
+                    break; // Bir mermi sadece bir kişiye değer
+                }
+            }
+
+            // Asker vurmadıysa üsse bak
+            if(!hit) {
+                let bx = en.team===1 ? 0 : W-BASE_W;
+                // Üs bölgesine girdi mi?
+                if (p.x >= bx && p.x <= bx+BASE_W) {
+                    en.hp -= p.dmg;
+                    en.en = Math.min(100, en.en + 1);
+                    hit = true;
+                }
+            }
+
+            // EĞER HERHANGİ BİR ŞEYE ÇARPTIYSA SİL (SNIPER DAHİL)
+            if(hit) {
+                game.projs.splice(i, 1);
+            }
+        }
+    }
+
+    function draw() {
+        ctx.fillStyle = "#151515";
+        ctx.fillRect(0, 0, W, H);
+
+        ctx.fillStyle = game.p1.col; ctx.fillRect(0, 0, BASE_W, H);
+        ctx.fillStyle = game.p2.col; ctx.fillRect(W-BASE_W, 0, BASE_W, H);
+
+        [game.p1, game.p2].forEach(p => {
+            for (let u of p.units) {
+                if(u.type === 'commando') ctx.fillStyle = '#ff7675';
+                else if(u.type === 'titan') ctx.fillStyle = '#00b894';
+                else ctx.fillStyle = p.col;
+                ctx.fillRect(u.x - u.sz, u.y - u.sz, u.sz*2, u.sz*2);
+                
+                ctx.fillStyle = '#0f0';
+                ctx.fillRect(u.x - u.sz, u.y - u.sz - 4, (u.sz*2) * (u.hp/u.max), 2);
+            }
+        });
+
+        for (let p of game.projs) {
+            ctx.fillStyle = p.col;
+            ctx.fillRect(p.x-2, p.y-2, 4, 4);
+        }
+    }
+
+    function updUI() {
+        setTx('p1-hp', Math.floor(game.p1.hp));
+        setTx('p1-gold', Math.floor(game.p1.gold));
+        setTx('p1-inc', game.p1.inc);
+        setTx('p1-pop', game.p1.units.length);
+        setTx('p1-mine', game.p1.mine);
+        setW('p1-bar', game.p1.en);
+        disp('p1-warn', game.p1.units.length >= MAX_POP);
+
+        setTx('p2-hp', Math.floor(game.p2.hp));
+        setTx('p2-gold', Math.floor(game.p2.gold));
+        setTx('p2-inc', game.p2.inc);
+        setTx('p2-pop', game.p2.units.length);
+        setTx('p2-mine', game.p2.mine);
+        setW('p2-bar', game.p2.en);
+        disp('p2-warn', game.p2.units.length >= MAX_POP);
+    }
+
+    function setTx(id, val) { document.getElementById(id).innerText = val; }
+    function setW(id, val) { 
+        let el = document.getElementById(id); 
+        el.style.width = val+"%"; 
+        el.className = val>=100 ? "bar-fill ready" : "bar-fill";
+    }
+    function disp(id, show) { document.getElementById(id).style.display = show?'inline':'none'; }
+
+    function end(msg) {
+        game.over = true;
+        ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(0,0,W,H);
+        ctx.fillStyle = "#fff"; ctx.font = "40px Monospace"; ctx.textAlign="center";
+        ctx.fillText(msg, W/2, H/2);
+    }
+
+    document.addEventListener('keydown', e => {
+        let k = e.key.toLowerCase();
+        if(k==='q') spawn(game.p1, 'rifle');
+        if(k==='w') spawn(game.p1, 'sniper');
+        if(k==='e') spawn(game.p1, 'tank');
+        if(k==='a') spawn(game.p1, 'commando');
+        if(k==='s') spawn(game.p1, 'titan');
+        if(k==='r') mine(game.p1);
+        if(k==='f') airStrike(game.p1, game.p2);
+
+        if(e.key==='7' || e.code==='Numpad7') spawn(game.p2, 'rifle');
+        if(e.key==='8' || e.code==='Numpad8') spawn(game.p2, 'sniper');
+        if(e.key==='9' || e.code==='Numpad9') spawn(game.p2, 'tank');
+        if(e.key==='4' || e.code==='Numpad4') spawn(game.p2, 'commando');
+        if(e.key==='5' || e.code==='Numpad5') spawn(game.p2, 'titan');
+        if(e.key==='+' || e.code==='NumpadAdd') mine(game.p2);
+        if(e.key==='0' || e.code==='Numpad0') airStrike(game.p2, game.p1);
+    });
+
+    function loop() { update(); draw(); if(!game.over) requestAnimationFrame(loop); }
+    loop();
+
+</script>
+</body>
+</html>

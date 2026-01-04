@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Neon Yılanlar - 2 Kişilik Kapışma</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
+
+        body {
+            background-color: #050505;
+            color: #fff;
+            font-family: 'Orbitron', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        h1 {
+            margin: 10px 0;
+            text-shadow: 0 0 10px #fff;
+            font-size: 2.5rem;
+            letter-spacing: 3px;
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 50px rgba(0, 255, 255, 0.1);
+        }
+
+        canvas {
+            background: #111;
+            border: 2px solid #333;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            display: block;
+        }
+
+        #ui-layer {
+            width: 800px;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .p1-score { color: #00ffff; text-shadow: 0 0 10px #00ffff; }
+        .p2-score { color: #ff0055; text-shadow: 0 0 10px #ff0055; }
+
+        #controls-hint {
+            margin-top: 15px;
+            color: #888;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+
+        .key {
+            display: inline-block;
+            background: #222;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid #444;
+            color: #ddd;
+            margin: 0 2px;
+        }
+
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.85);
+            padding: 40px;
+            border: 1px solid #fff;
+            text-align: center;
+            display: none;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.2);
+        }
+        
+        button {
+            background: transparent;
+            color: #fff;
+            border: 2px solid #fff;
+            padding: 10px 20px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.2rem;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: 0.3s;
+        }
+        
+        button:hover {
+            background: #fff;
+            color: #000;
+            box-shadow: 0 0 20px #fff;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>NEON YILANLAR</h1>
+
+    <div id="ui-layer">
+        <div class="p1-score">OYUNCU 1: <span id="score1">0</span></div>
+        <div class="p2-score">OYUNCU 2: <span id="score2">0</span></div>
+    </div>
+
+    <div id="game-container">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="game-over">
+            <h2 id="winner-text">OYUNCU 1 KAZANDI!</h2>
+            <button onclick="resetGame()">TEKRAR OYNA</button>
+        </div>
+    </div>
+
+    <div id="controls-hint">
+        <span style="color:#00ffff">OYUNCU 1:</span> <span class="key">←</span> <span class="key">↑</span> <span class="key">↓</span> <span class="key">→</span>
+        &nbsp;&nbsp;|&nbsp;&nbsp;
+        <span style="color:#ff0055">OYUNCU 2:</span> <span class="key">W</span> <span class="key">A</span> <span class="key">S</span> <span class="key">D</span>
+    </div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const score1El = document.getElementById('score1');
+    const score2El = document.getElementById('score2');
+    const gameOverScreen = document.getElementById('game-over');
+    const winnerText = document.getElementById('winner-text');
+
+    const GRID_SIZE = 20;
+    const TILE_COUNT_X = canvas.width / GRID_SIZE;
+    const TILE_COUNT_Y = canvas.height / GRID_SIZE;
+
+    let gameInterval;
+    let isGameOver = false;
+
+    // Renkler
+    const P1_COLOR = '#00ffff';
+    const P2_COLOR = '#ff0055';
+    const FOOD_COLOR = '#ffff00';
+
+    // Efektler için parçacık sistemi
+    let particles = [];
+
+    // Yılan Nesneleri
+    const player1 = {
+        snake: [],
+        vel: { x: 0, y: 0 },
+        nextVel: { x: 1, y: 0 }, // Başlangıç yönü
+        score: 0,
+        color: P1_COLOR,
+        dead: false
+    };
+
+    const player2 = {
+        snake: [],
+        vel: { x: 0, y: 0 },
+        nextVel: { x: -1, y: 0 }, // Başlangıç yönü
+        score: 0,
+        color: P2_COLOR,
+        dead: false
+    };
+
+    let food = { x: 15, y: 15 };
+
+    function initGame() {
+        // P1 Başlangıç (Sol üst)
+        player1.snake = [{x: 5, y: 5}, {x: 4, y: 5}, {x: 3, y: 5}];
+        player1.vel = { x: 1, y: 0 };
+        player1.nextVel = { x: 1, y: 0 };
+        player1.score = 0;
+        player1.dead = false;
+
+        // P2 Başlangıç (Sağ alt)
+        player2.snake = [{x: 34, y: 24}, {x: 35, y: 24}, {x: 36, y: 24}];
+        player2.vel = { x: -1, y: 0 };
+        player2.nextVel = { x: -1, y: 0 };
+        player2.score = 0;
+        player2.dead = false;
+
+        placeFood();
+        particles = [];
+        isGameOver = false;
+        gameOverScreen.style.display = 'none';
+        updateScore();
+        
+        if(gameInterval) clearInterval(gameInterval);
+        gameInterval = setInterval(gameLoop, 1000 / 15); // 15 FPS
+    }
+
+    function gameLoop() {
+        if(isGameOver) return;
+
+        update();
+        draw();
+    }
+
+    function update() {
+        // Yönleri güncelle (180 derece dönüş engeli ile)
+        applyVelocity(player1);
+        applyVelocity(player2);
+
+        // Hareket
+        moveSnake(player1);
+        moveSnake(player2);
+
+        // Çarpışma Kontrolleri
+        if (checkCollision(player1) || checkPlayerCollision(player1, player2)) {
+            player1.dead = true;
+        }
+        if (checkCollision(player2) || checkPlayerCollision(player2, player1)) {
+            player2.dead = true;
+        }
+
+        // Oyun Bitiş Kontrolü
+        if (player1.dead && player2.dead) {
+            endGame("BERABERE!");
+        } else if (player1.dead) {
+            endGame("OYUNCU 2 KAZANDI!");
+        } else if (player2.dead) {
+            endGame("OYUNCU 1 KAZANDI!");
+        }
+
+        // Yemek Yeme
+        checkFood(player1);
+        checkFood(player2);
+
+        // Parçacıkları güncelle
+        updateParticles();
+    }
+
+    function applyVelocity(player) {
+        // Eğer zıt yöne gitmeye çalışmıyorsa yönü güncelle
+        if (player.nextVel.x !== -player.vel.x && player.nextVel.y !== -player.vel.y) {
+            player.vel = player.nextVel;
+        }
+    }
+
+    function moveSnake(player) {
+        const head = { 
+            x: player.snake[0].x + player.vel.x, 
+            y: player.snake[0].y + player.vel.y 
+        };
+        player.snake.unshift(head);
+        player.snake.pop();
+    }
+
+    function checkCollision(player) {
+        const head = player.snake[0];
+
+        // Duvarlar
+        if (head.x < 0 || head.x >= TILE_COUNT_X || head.y < 0 || head.y >= TILE_COUNT_Y) {
+            return true;
+        }
+
+        // Kendine çarpma
+        for (let i = 1; i < player.snake.length; i++) {
+            if (head.x === player.snake[i].x && head.y === player.snake[i].y) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function checkPlayerCollision(attacker, victim) {
+        const head = attacker.snake[0];
+        // Rakibin herhangi bir parçasına çarpma
+        for (let part of victim.snake) {
+            if (head.x === part.x && head.y === part.y) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function checkFood(player) {
+        const head = player.snake[0];
+        if (head.x === food.x && head.y === food.y) {
+            player.score++;
+            // Kuyruğu uzat
+            player.snake.push({ ...player.snake[player.snake.length - 1] });
+            createExplosion(food.x * GRID_SIZE + GRID_SIZE/2, food.y * GRID_SIZE + GRID_SIZE/2, FOOD_COLOR);
+            placeFood();
+            updateScore();
+        }
+    }
+
+    function placeFood() {
+        food = {
+            x: Math.floor(Math.random() * TILE_COUNT_X),
+            y: Math.floor(Math.random() * TILE_COUNT_Y)
+        };
+        // Yem yılanların üstüne gelmesin
+        // (Basitlik için şimdilik sadece rastgele, çok nadir üst üste gelir)
+    }
+
+    function updateScore() {
+        score1El.innerText = player1.score;
+        score2El.innerText = player2.score;
+    }
+
+    function draw() {
+        // Arka planı temizle
+        ctx.fillStyle = '#111';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Grid çiz (isteğe bağlı, sildik daha temiz görünsün diye)
+
+        // Yemi Çiz
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = FOOD_COLOR;
+        ctx.fillStyle = FOOD_COLOR;
+        ctx.beginPath();
+        ctx.arc(food.x * GRID_SIZE + GRID_SIZE/2, food.y * GRID_SIZE + GRID_SIZE/2, GRID_SIZE/2 - 2, 0, Math.PI*2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Yılanları Çiz
+        drawSnake(player1);
+        drawSnake(player2);
+
+        // Parçacıkları Çiz
+        drawParticles();
+    }
+
+    function drawSnake(player) {
+        ctx.fillStyle = player.color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = player.color;
+
+        player.snake.forEach((part, index) => {
+            // Baş kısmı biraz daha parlak veya farklı olabilir
+            if(index === 0) {
+                 ctx.fillStyle = '#fff'; // Kafa beyazımsı
+            } else {
+                 ctx.fillStyle = player.color;
+            }
+            
+            ctx.fillRect(part.x * GRID_SIZE + 1, part.y * GRID_SIZE + 1, GRID_SIZE - 2, GRID_SIZE - 2);
+        });
+        
+        ctx.shadowBlur = 0;
+    }
+
+    // --- PARTICLE SYSTEM ---
+    function createExplosion(x, y, color) {
+        for(let i=0; i<10; i++) {
+            particles.push({
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 5,
+                vy: (Math.random() - 0.5) * 5,
+                life: 1.0,
+                color: color
+            });
+        }
+    }
+
+    function updateParticles() {
+        for(let i = particles.length - 1; i >= 0; i--) {
+            let p = particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life -= 0.05;
+            if(p.life <= 0) {
+                particles.splice(i, 1);
+            }
+        }
+    }
+
+    function drawParticles() {
+        particles.forEach(p => {
+            ctx.globalAlpha = p.life;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        ctx.globalAlpha = 1.0;
+    }
+
+    function endGame(msg) {
+        isGameOver = true;
+        winnerText.innerText = msg;
+        gameOverScreen.style.display = 'block';
+        clearInterval(gameInterval);
+    }
+
+    function resetGame() {
+        initGame();
+    }
+
+    // KONTROLLER
+    document.addEventListener('keydown', e => {
+        // Oyuncu 1 (Ok Tuşları)
+        switch(e.key) {
+            case 'ArrowUp': if(player1.vel.y === 0) player1.nextVel = {x: 0, y: -1}; break;
+            case 'ArrowDown': if(player1.vel.y === 0) player1.nextVel = {x: 0, y: 1}; break;
+            case 'ArrowLeft': if(player1.vel.x === 0) player1.nextVel = {x: -1, y: 0}; break;
+            case 'ArrowRight': if(player1.vel.x === 0) player1.nextVel = {x: 1, y: 0}; break;
+        }
+
+        // Oyuncu 2 (WASD)
+        switch(e.key.toLowerCase()) {
+            case 'w': if(player2.vel.y === 0) player2.nextVel = {x: 0, y: -1}; break;
+            case 's': if(player2.vel.y === 0) player2.nextVel = {x: 0, y: 1}; break;
+            case 'a': if(player2.vel.x === 0) player2.nextVel = {x: -1, y: 0}; break;
+            case 'd': if(player2.vel.x === 0) player2.nextVel = {x: 1, y: 0}; break;
+        }
+    });
+
+    // Oyunu Başlat
+    initGame();
+
+</script>
+
+</body>
+</html>

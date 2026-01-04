@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>The Eternal Dungeon - Roguelike RPG</title>
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap');
+
+    body {
+        background-color: #050505;
+        color: #c0c0c0;
+        font-family: 'Fira Code', monospace;
+        margin: 0;
+        height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        overflow: hidden;
+        user-select: none;
+    }
+
+    #game-wrapper {
+        display: flex;
+        gap: 20px;
+        border: 2px solid #333;
+        padding: 20px;
+        background: #111;
+        box-shadow: 0 0 50px rgba(0,0,0,0.8);
+    }
+
+    #canvas-container {
+        position: relative;
+    }
+
+    canvas {
+        display: block;
+        background-color: #000;
+        border: 1px solid #444;
+        image-rendering: pixelated;
+    }
+
+    /* Sağ Panel (UI) */
+    #sidebar {
+        width: 300px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+
+    .panel {
+        background: #1a1a1a;
+        padding: 15px;
+        border: 1px solid #333;
+        margin-bottom: 15px;
+    }
+
+    h2 { margin: 0 0 10px 0; color: #f0c674; font-size: 1.2rem; border-bottom: 1px solid #444; padding-bottom: 5px; }
+    
+    .stat-row { display: flex; justify-content: space-between; margin-bottom: 5px; color: #fff; }
+    .stat-label { color: #81a2be; }
+    
+    #inventory-list { font-size: 0.9rem; min-height: 100px; }
+    .item { padding: 5px; background: #222; margin-bottom: 5px; cursor: pointer; border-left: 3px solid #555; }
+    .item:hover { background: #333; border-left-color: #f0c674; }
+    
+    #log-panel {
+        flex-grow: 1;
+        overflow-y: auto;
+        font-size: 0.8rem;
+        height: 200px;
+        background: #000;
+        border: 1px solid #333;
+        padding: 10px;
+        color: #888;
+    }
+    
+    .log-msg { margin-bottom: 4px; }
+    .log-danger { color: #ff5f5f; }
+    .log-success { color: #b5bd68; }
+    .log-info { color: #81a2be; }
+    .log-warn { color: #f0c674; }
+
+    /* Floating Text Effect */
+    .floater {
+        position: absolute;
+        font-weight: bold;
+        animation: floatUp 1s forwards;
+        pointer-events: none;
+    }
+    @keyframes floatUp {
+        0% { opacity: 1; transform: translateY(0); }
+        100% { opacity: 0; transform: translateY(-30px); }
+    }
+
+    /* Game Over Overlay */
+    #overlay {
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.85);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 10;
+    }
+    .hidden { display: none !important; }
+    .btn {
+        background: #f0c674; border: none; padding: 10px 20px;
+        font-family: inherit; font-weight: bold; cursor: pointer; font-size: 1.2rem;
+        margin-top: 20px;
+    }
+    .btn:hover { background: #de935f; }
+
+</style>
+</head>
+<body>
+
+<div id="game-wrapper">
+    <div id="canvas-container">
+        <canvas id="gameCanvas" width="600" height="600"></canvas>
+        <div id="overlay" class="hidden">
+            <h1 style="color:#cc6666; font-size:3rem;">ÖLDÜNÜZ</h1>
+            <p id="death-stats" style="color:#fff;">Derinlik: 1</p>
+            <button class="btn" onclick="initGame()">YENİDEN DOĞ</button>
+        </div>
+    </div>
+
+    <div id="sidebar">
+        <div class="panel">
+            <h2>KARAKTER</h2>
+            <div class="stat-row"><span class="stat-label">HP:</span> <span id="hp-val">100/100</span></div>
+            <div class="stat-row"><span class="stat-label">ATK:</span> <span id="atk-val">10</span></div>
+            <div class="stat-row"><span class="stat-label">DEF:</span> <span id="def-val">2</span></div>
+            <div class="stat-row"><span class="stat-label">LVL:</span> <span id="lvl-val">1</span></div>
+            <div class="stat-row"><span class="stat-label">XP:</span> <span id="xp-val">0/50</span></div>
+            <div class="stat-row"><span class="stat-label">KAT:</span> <span id="floor-val">1</span></div>
+        </div>
+
+        <div class="panel">
+            <h2>ENVANTER (E)</h2>
+            <div id="inventory-list">
+                <div style="color:#555; font-style:italic;">Boş...</div>
+            </div>
+            <div style="font-size:0.7rem; color:#666; margin-top:5px;">İksir içmek için tıkla veya (E) bas.</div>
+        </div>
+
+        <div id="log-panel">
+            <div class="log-msg log-info">Zindana hoş geldin gezgin...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * THE ETERNAL DUNGEON
+ * Single File Roguelike RPG
+ */
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const TILE_SIZE = 24;
+const COLS = 25;
+const ROWS = 25;
+
+// UI Elements
+const uiHp = document.getElementById('hp-val');
+const uiAtk = document.getElementById('atk-val');
+const uiDef = document.getElementById('def-val');
+const uiLvl = document.getElementById('lvl-val');
+const uiXp = document.getElementById('xp-val');
+const uiFloor = document.getElementById('floor-val');
+const uiInv = document.getElementById('inventory-list');
+const logPanel = document.getElementById('log-panel');
+const overlay = document.getElementById('overlay');
+const container = document.getElementById('canvas-container');
+
+// Game State
+let player;
+let map = []; // 2D array: 1=wall, 0=floor
+let enemies = [];
+let items = [];
+let stairs;
+let particles = [];
+let floorLevel = 1;
+let isPlayerTurn = true;
+let gameState = 'PLAY'; // PLAY, DEAD
+
+// Sprite Colors/Chars
+const COLORS = {
+    floor: '#1a1a1a',
+    wall: '#444',
+    wallDark: '#222',
+    player: '#f0c674',
+    enemy: '#cc6666',
+    potion: '#b5bd68',
+    weapon: '#81a2be',
+    stairs: '#b294bb',
+    fog: '#000'
+};
+
+/* --- CLASSES --- */
+
+class Entity {
+    constructor(x, y, name, symbol, color) {
+        this.x = x;
+        this.y = y;
+        this.name = name;
+        this.symbol = symbol; // For potential ascii mode, currently using rects
+        this.color = color;
+        this.hp = 100;
+        this.maxHp = 100;
+        this.atk = 10;
+        this.def = 2;
+        this.xp = 0;
+        this.lvl = 1;
+        this.dead = false;
+    }
+}
+
+class Player extends Entity {
+    constructor(x, y) {
+        super(x, y, "Kahraman", "@", COLORS.player);
+        this.xpToNext = 50;
+        this.inventory = [];
+    }
+
+    move(dx, dy) {
+        if (gameState !== 'PLAY') return;
+
+        let destX = this.x + dx;
+        let destY = this.y + dy;
+
+        // Duvar Kontrolü
+        if (map[destY][destX] === 1) return;
+
+        // Düşman Kontrolü
+        let target = enemies.find(e => e.x === destX && e.y === destY);
+        if (target) {
+            this.attack(target);
+        } else {
+            this.x = destX;
+            this.y = destY;
+            
+            // Eşya Kontrolü
+            let itemIndex = items.findIndex(i => i.x === destX && i.y === destY);
+            if (itemIndex !== -1) {
+                let item = items[itemIndex];
+                log(`Yerde buldun: ${item.name}`, 'log-success');
+                this.inventory.push(item);
+                items.splice(itemIndex, 1);
+                updateUI();
+            }
+
+            // Merdiven Kontrolü
+            if (stairs && destX === stairs.x && destY === stairs.y) {
+                nextFloor();
+                return; // Yeni kat yüklenirken turu bitirme
+            }
+        }
+        
+        endTurn();
+    }
+
+    attack(target) {
+        let dmg = Math.max(1, this.atk - target.def);
+        target.hp -= dmg;
+        createFloatingText(dmg, target.x, target.y, '#fff');
+        log(`${target.name} varlığına ${dmg} hasar verdin.`, 'log-info');
+        
+        if (target.hp <= 0) {
+            target.dead = true;
+            log(`${target.name} öldü! +${target.xpValue} XP`, 'log-success');
+            this.gainXp(target.xpValue);
+            // Düşme şansı (Loot)
+            if(Math.random() < 0.3) {
+                 items.push(new Item(target.x, target.y, 'Can İksiri', 'potion'));
+                 log("Düşman bir iksir düşürdü!", 'log-warn');
+            }
+        }
+        // Vurma efekti (basit titreme)
+        container.style.transform = `translate(${Math.random()*4-2}px, ${Math.random()*4-2}px)`;
+        setTimeout(()=> container.style.transform = 'none', 50);
+    }
+
+    gainXp(amount) {
+        this.xp += amount;
+        if (this.xp >= this.xpToNext) {
+            this.lvl++;
+            this.xp -= this.xpToNext;
+            this.xpToNext = Math.floor(this.xpToNext * 1.5);
+            this.maxHp += 20;
+            this.hp = this.maxHp;
+            this.atk += 2;
+            this.def += 1;
+            log(`SEVİYE ATLADIN! Şimdi seviye ${this.lvl}!`, 'log-success');
+            createFloatingText("LEVEL UP!", this.x, this.y, '#f0c674');
+        }
+        updateUI();
+    }
+    
+    useItem(index) {
+        let item = this.inventory[index];
+        if (item.type === 'potion') {
+            let heal = 30;
+            this.hp = Math.min(this.hp + heal, this.maxHp);
+            log(`${item.name} içtin. ${heal} can yenilendi.`, 'log-success');
+            this.inventory.splice(index, 1);
+            updateUI();
+            endTurn(); // Eşya kullanmak tur harcar
+        }
+    }
+}
+
+class Enemy extends Entity {
+    constructor(x, y, type) {
+        super(x, y, type.name, type.char, COLORS.enemy);
+        this.hp = type.hp + (floorLevel * 5);
+        this.maxHp = this.hp;
+        this.atk = type.atk + Math.floor(floorLevel * 1.5);
+        this.def = type.def + Math.floor(floorLevel * 0.5);
+        this.xpValue = type.xp;
+    }
+
+    takeTurn() {
+        if (this.dead) return;
+        
+        // Basit Yapay Zeka: Oyuncuya yaklaş
+        let dx = player.x - this.x;
+        let dy = player.y - this.y;
+        let dist = Math.sqrt(dx*dx + dy*dy);
+
+        if (dist <= 1.5) { // Saldırı menzili
+            let dmg = Math.max(0, this.atk - player.def);
+            player.hp -= dmg;
+            log(`${this.name} sana vurdu: -${dmg} HP`, 'log-danger');
+            createFloatingText(dmg, player.x, player.y, '#ff5f5f');
+            if (player.hp <= 0) {
+                gameOver();
+            }
+        } else if (dist < 6) { // Takip menzili
+            let moveX = this.x + Math.sign(dx);
+            let moveY = this.y + Math.sign(dy);
+            
+            // Basit çarpışma kontrolü (Kendi türüyle veya duvarla çakışmasın)
+            if (map[moveY][moveX] === 0 && !enemies.some(e => e.x === moveX && e.y === moveY && !e.dead)) {
+                this.x = moveX;
+                this.y = moveY;
+            }
+        }
+    }
+}
+
+class Item {
+    constructor(x, y, name, type) {
+        this.x = x; this.y = y; this.name = name; this.type = type; // potion, weapon
+    }
+}
+
+// --- GENERATION ALGORITHMS ---
+
+function initGame() {
+    gameState = 'PLAY';
+    overlay.classList.add('hidden');
+    floorLevel = 1;
+    logPanel.innerHTML = '<div class="log-msg log-info">Yeni macera başladı.</div>';
+    
+    player = new Player(1, 1);
+    generateFloor();
+    updateUI();
+    draw();
+}
+
+function nextFloor() {
+    floorLevel++;
+    log(`Zindanın derinliklerine indin... KAT ${floorLevel}`, 'log-warn');
+    generateFloor();
+}
+
+function generateFloor() {
+    // 1. Fill with walls
+    map = [];
+    for(let y=0; y<ROWS; y++) {
+        let row = [];
+        for(let x=0; x<COLS; x++) row.push(1);
+        map.push(row);
+    }
+
+    // 2. Random Rooms and Tunnels (Simple BSP-like)
+    let rooms = [];
+    const minSize = 3, maxSize = 6;
+    const maxRooms = 10;
+
+    for (let i = 0; i < maxRooms; i++) {
+        let w = Math.floor(Math.random() * (maxSize - minSize + 1)) + minSize;
+        let h = Math.floor(Math.random() * (maxSize - minSize + 1)) + minSize;
+        let x = Math.floor(Math.random() * (COLS - w - 1)) + 1;
+        let y = Math.floor(Math.random() * (ROWS - h - 1)) + 1;
+
+        let newRoom = {x, y, w, h};
+        
+        // Overlap check
+        let failed = false;
+        for (let other of rooms) {
+            if (newRoom.x <= other.x + other.w && newRoom.x + newRoom.w >= other.x &&
+                newRoom.y <= other.y + other.h && newRoom.y + newRoom.h >= other.y) {
+                failed = true; break;
+            }
+        }
+
+        if (!failed) {
+            createRoom(newRoom);
+            if (rooms.length > 0) {
+                let prev = rooms[rooms.length-1];
+                connectRooms(prev, newRoom);
+            }
+            rooms.push(newRoom);
+        }
+    }
+
+    // Player Start (First Room)
+    player.x = Math.floor(rooms[0].x + rooms[0].w/2);
+    player.y = Math.floor(rooms[0].y + rooms[0].h/2);
+
+    // Stairs (Last Room)
+    let last = rooms[rooms.length-1];
+    stairs = { x: Math.floor(last.x + last.w/2), y: Math.floor(last.y + last.h/2) };
+
+    // Enemies & Items
+    enemies = [];
+    items = [];
+    
+    rooms.forEach((r, idx) => {
+        if (idx === 0) return; // Don't spawn in start room
+        
+        // Spawn Enemy?
+        if (Math.random() > 0.3) {
+            let ex = r.x + Math.floor(Math.random() * r.w);
+            let ey = r.y + Math.floor(Math.random() * r.h);
+            let type = Math.random() > 0.7 ? 
+                {name: "Ork", char: "O", hp: 40, atk: 8, def: 1, xp: 20} : 
+                {name: "Goblin", char: "g", hp: 20, atk: 5, def: 0, xp: 10};
+            
+            enemies.push(new Enemy(ex, ey, type));
+        }
+
+        // Spawn Item?
+        if (Math.random() > 0.7) {
+             let ix = r.x + Math.floor(Math.random() * r.w);
+             let iy = r.y + Math.floor(Math.random() * r.h);
+             items.push(new Item(ix, iy, "Can İksiri", "potion"));
+        }
+    });
+}
+
+function createRoom(room) {
+    for (let y = room.y; y < room.y + room.h; y++) {
+        for (let x = room.x; x < room.x + room.w; x++) {
+            map[y][x] = 0;
+        }
+    }
+}
+
+function connectRooms(r1, r2) {
+    let c1 = {x: Math.floor(r1.x + r1.w/2), y: Math.floor(r1.y + r1.h/2)};
+    let c2 = {x: Math.floor(r2.x + r2.w/2), y: Math.floor(r2.y + r2.h/2)};
+
+    // Horizontal then Vertical
+    if (Math.random() > 0.5) {
+        hTunnel(c1.x, c2.x, c1.y);
+        vTunnel(c1.y, c2.y, c2.x);
+    } else {
+        vTunnel(c1.y, c2.y, c1.x);
+        hTunnel(c1.x, c2.x, c2.y);
+    }
+}
+
+function hTunnel(x1, x2, y) {
+    for (let x = Math.min(x1, x2); x <= Math.max(x1, x2); x++) map[y][x] = 0;
+}
+function vTunnel(y1, y2, x) {
+    for (let y = Math.min(y1, y2); y <= Math.max(y1, y2); y++) map[y][x] = 0;
+}
+
+// --- GAME LOOP & LOGIC ---
+
+function endTurn() {
+    isPlayerTurn = false;
+    draw(); // Draw player move
+    
+    // Enemy Turn
+    setTimeout(() => {
+        enemies = enemies.filter(e => !e.dead); // Clean dead bodies
+        enemies.forEach(e => e.takeTurn());
+        
+        if (player.hp <= 0) return; // Game over check inside Enemy class
+
+        isPlayerTurn = true;
+        updateUI();
+        draw();
+    }, 50); // Small delay for feel
+}
+
+// --- RENDERING ---
+
+function draw() {
+    // Clear
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Calculate FOV (Simple distance check)
+    const viewDist = 6;
+
+    for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+            let dx = x - player.x;
+            let dy = y - player.y;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            
+            // Render Configs
+            let screenX = x * TILE_SIZE;
+            let screenY = y * TILE_SIZE;
+
+            if (dist < viewDist) {
+                // Visible Area
+                // Lighting Effect
+                let brightness = 1 - (dist / viewDist);
+                
+                // Draw Map
+                if (map[y][x] === 1) {
+                    ctx.fillStyle = COLORS.wall;
+                } else {
+                    ctx.fillStyle = COLORS.floor;
+                }
+                ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+                
+                // Apply Shadow overlay
+                ctx.fillStyle = `rgba(0,0,0,${1-brightness})`;
+                ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+
+            } else if (dist < viewDist + 1) {
+                // Fog Edge
+                ctx.fillStyle = '#111';
+                ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+            }
+        }
+    }
+
+    // Draw Objects only if visible
+    function isVisible(obj) {
+        let dx = obj.x - player.x;
+        let dy = obj.y - player.y;
+        return Math.sqrt(dx*dx + dy*dy) < viewDist;
+    }
+
+    // Stairs
+    if(isVisible(stairs)) {
+        drawRect(stairs.x, stairs.y, COLORS.stairs, "⇩");
+    }
+
+    // Items
+    items.forEach(i => {
+        if(isVisible(i)) drawRect(i.x, i.y, i.type === 'potion' ? COLORS.potion : COLORS.weapon, "!");
+    });
+
+    // Enemies
+    enemies.forEach(e => {
+        if(isVisible(e)) {
+            drawRect(e.x, e.y, COLORS.enemy, "");
+            // Enemy HP Bar small
+            let hpPct = e.hp / e.maxHp;
+            ctx.fillStyle = 'red';
+            ctx.fillRect(e.x*TILE_SIZE + 2, e.y*TILE_SIZE - 4, (TILE_SIZE-4)*hpPct, 3);
+        }
+    });
+
+    // Player
+    drawRect(player.x, player.y, COLORS.player, "");
+}
+
+function drawRect(x, y, color, char) {
+    ctx.fillStyle = color;
+    // Glow effect
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = color;
+    ctx.fillRect(x * TILE_SIZE + 2, y * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+    ctx.shadowBlur = 0;
+    
+    // Optional Char
+    if (char) {
+        ctx.fillStyle = '#000';
+        ctx.font = '16px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(char, x*TILE_SIZE + TILE_SIZE/2, y*TILE_SIZE + TILE_SIZE/2);
+    }
+}
+
+function createFloatingText(text, x, y, color) {
+    const el = document.createElement('div');
+    el.className = 'floater';
+    el.innerText = text;
+    el.style.color = color;
+    el.style.left = (canvas.offsetLeft + x * TILE_SIZE + 10) + 'px';
+    el.style.top = (canvas.offsetTop + y * TILE_SIZE) + 'px';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1000);
+}
+
+// --- UI & HELPERS ---
+
+function updateUI() {
+    uiHp.innerText = `${player.hp}/${player.maxHp}`;
+    uiAtk.innerText = player.atk;
+    uiDef.innerText = player.def;
+    uiLvl.innerText = player.lvl;
+    uiXp.innerText = `${player.xp}/${player.xpToNext}`;
+    uiFloor.innerText = floorLevel;
+
+    uiInv.innerHTML = '';
+    if (player.inventory.length === 0) {
+        uiInv.innerHTML = '<div style="color:#555; font-style:italic;">Boş...</div>';
+    } else {
+        player.inventory.forEach((item, idx) => {
+            let div = document.createElement('div');
+            div.className = 'item';
+            div.innerText = item.name;
+            div.onclick = () => player.useItem(idx);
+            uiInv.appendChild(div);
+        });
+    }
+}
+
+function log(msg, type) {
+    let div = document.createElement('div');
+    div.className = `log-msg ${type}`;
+    div.innerText = `> ${msg}`;
+    logPanel.appendChild(div);
+    logPanel.scrollTop = logPanel.scrollHeight;
+}
+
+function gameOver() {
+    gameState = 'DEAD';
+    document.getElementById('death-stats').innerText = `Ulaşılan Kat: ${floorLevel} | Seviye: ${player.lvl}`;
+    overlay.classList.remove('hidden');
+}
+
+// Input Handling
+window.addEventListener('keydown', e => {
+    if (gameState !== 'PLAY' || !isPlayerTurn) return;
+
+    if (e.key === 'ArrowUp' || e.key === 'w') player.move(0, -1);
+    if (e.key === 'ArrowDown' || e.key === 's') player.move(0, 1);
+    if (e.key === 'ArrowLeft' || e.key === 'a') player.move(-1, 0);
+    if (e.key === 'ArrowRight' || e.key === 'd') player.move(1, 0);
+    if (e.key === 'e') {
+        if(player.inventory.length > 0) player.useItem(0); // Shortcut
+    }
+    // Wait
+    if (e.key === ' ') { log("Bekledin...", 'log-info'); endTurn(); }
+});
+
+// Start
+initGame();
+
+</script>
+</body>
+</html>

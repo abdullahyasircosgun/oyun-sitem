@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>WARZONE: TACTICAL OPS</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #050505;
+            color: #0f0;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+        canvas {
+            border: 2px solid #333;
+            box-shadow: 0 0 50px rgba(0, 255, 0, 0.1);
+            background: #000;
+            cursor: crosshair;
+        }
+        /* Askeri Arayüz */
+        #hud-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .panel {
+            background: rgba(0, 20, 0, 0.85);
+            border: 1px solid #0f0;
+            padding: 10px;
+            width: 280px;
+            position: relative;
+        }
+        .panel::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 2px;
+            background: repeating-linear-gradient(90deg, #0f0 0, #0f0 10px, transparent 10px, transparent 20px);
+        }
+        h2 { margin: 0; font-size: 16px; border-bottom: 1px solid #0f0; padding-bottom: 5px; margin-bottom: 5px; text-transform: uppercase;}
+        .stat-bar { height: 6px; background: #111; margin-bottom: 4px; border: 1px solid #050; position: relative;}
+        .fill { height: 100%; display: block; transition: width 0.1s;}
+        .hp-fill { background: #d00; }
+        .fuel-fill { background: #eb2f06; }
+        .ammo-fill { background: #f1c40f; }
+        
+        .weapon-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; font-size: 10px; margin-top: 5px;}
+        .weapon-item { padding: 3px; background: #002200; color: #0a0; text-align: center; }
+        .weapon-item.active { background: #0f0; color: #000; font-weight: bold; }
+        
+        #environment-info {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            color: #ccc;
+            background: rgba(0,0,0,0.7);
+            padding: 5px 15px;
+            border-radius: 4px;
+            border: 1px solid #555;
+            font-size: 12px;
+        }
+        .blink { animation: blinker 1s linear infinite; color: red; font-weight: bold;}
+        @keyframes blinker { 50% { opacity: 0; } }
+        
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            color: #444;
+            font-size: 10px;
+            text-align: center;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="environment-info">
+        RÜZGAR: <span id="wind-val">0</span> m/s <span id="wind-dir">→</span> | HAVA: YAĞMURLU
+        <div id="warning-msg" style="display:none;" class="blink">⚠ HAVA SALDIRISI TESPİT EDİLDİ ⚠</div>
+    </div>
+
+    <div id="hud-layer">
+        <div class="panel">
+            <h2 style="color:#3498db">BRAVO TAKIMI (P1)</h2>
+            SAĞLIK: <div class="stat-bar"><span id="p1-hp" class="fill hp-fill" style="width:100%"></span></div>
+            YAKIT (JET): <div class="stat-bar"><span id="p1-fuel" class="fill fuel-fill" style="width:100%"></span></div>
+            ŞARJ: <div class="stat-bar"><span id="p1-cd" class="fill ammo-fill" style="width:0%"></span></div>
+            <div class="weapon-grid">
+                <div id="p1-w0" class="weapon-item active">1. BAZUKA</div>
+                <div id="p1-w1" class="weapon-item">2. SNIPER</div>
+                <div id="p1-w2" class="weapon-item">3. HAVA SALD.</div>
+                <div id="p1-w3" class="weapon-item">4. POMPALI</div>
+            </div>
+        </div>
+
+        <div class="panel" style="text-align:right;">
+            <h2 style="color:#e74c3c">DELTA TAKIMI (P2)</h2>
+            SAĞLIK: <div class="stat-bar"><span id="p2-hp" class="fill hp-fill" style="width:100%"></span></div>
+            YAKIT (JET): <div class="stat-bar"><span id="p2-fuel" class="fill fuel-fill" style="width:100%"></span></div>
+            ŞARJ: <div class="stat-bar"><span id="p2-cd" class="fill ammo-fill" style="width:0%"></span></div>
+            <div class="weapon-grid" style="direction: ltr;">
+                <div id="p2-w0" class="weapon-item active">8. BAZUKA</div>
+                <div id="p2-w1" class="weapon-item">9. SNIPER</div>
+                <div id="p2-w2" class="weapon-item">0. HAVA SALD.</div>
+                <div id="p2-w3" class="weapon-item">-. POMPALI</div>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas" width="1000" height="600"></canvas>
+
+    <div id="controls">
+        P1: [WASD] Hareket/Jetpack | [BOŞLUK] Ateş | [1-4] Silah | P2: [OKLAR] Hareket/Jetpack | [ENTER] Ateş | [8,9,0,-] Silah
+    </div>
+
+<script>
+// --- SES SENTEZLEYİCİ (Sound Synth) ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const Sound = {
+    play: (type) => {
+        if(audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        const now = audioCtx.currentTime;
+        
+        if (type === 'shoot_heavy') { // Bazuka
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(100, now);
+            osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.5);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+            osc.start(); osc.stop(now + 0.5);
+        } else if (type === 'shoot_sniper') { // Sniper
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(800, now);
+            osc.frequency.exponentialRampToValueAtTime(100, now + 0.1);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.1);
+            osc.start(); osc.stop(now + 0.1);
+        } else if (type === 'explosion') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(50, now);
+            osc.frequency.exponentialRampToValueAtTime(0.01, now + 1.0);
+            gain.gain.setValueAtTime(1, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 1.0);
+            osc.start(); osc.stop(now + 1.0);
+        } else if (type === 'jetpack') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(50, now);
+            gain.gain.setValueAtTime(0.05, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.1);
+            osc.start(); osc.stop(now + 0.1);
+        } else if (type === 'plane') { // Uçak sesi
+             osc.type = 'sawtooth';
+             osc.frequency.setValueAtTime(60, now);
+             osc.frequency.linearRampToValueAtTime(40, now + 2);
+             gain.gain.setValueAtTime(0.1, now);
+             gain.gain.linearRampToValueAtTime(0, now + 2);
+             osc.start(); osc.stop(now + 2);
+        }
+    }
+};
+
+// --- OYUN DEĞİŞKENLERİ ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width;
+const H = canvas.height;
+
+// Fizik
+const GRAVITY = 0.2;
+const WIND_CHANGE_RATE = 0.005;
+
+// Varlıklar
+let terrain = [];
+let players = [];
+let bullets = [];
+let particles = [];
+let crates = [];
+let airStrikes = []; // Uçaklar
+let decals = []; // Kalıcı kan/izler
+
+// Durum
+let wind = 0;
+let shakeTime = 0;
+let gameOver = false;
+
+// Silahlar
+const WEAPONS = [
+    { name: 'BAZUKA', type: 'explosive', dmg: 25, rad: 40, speed: 10, cd: 60, ammo: Infinity },
+    { name: 'SNIPER', type: 'ray', dmg: 40, rad: 5, speed: 25, cd: 90, ammo: 5 },
+    { name: 'AIRSTRIKE', type: 'signal', dmg: 0, rad: 0, speed: 0, cd: 300, ammo: 1 },
+    { name: 'POMPALI', type: 'shotgun', dmg: 8, rad: 10, speed: 12, cd: 45, ammo: Infinity }
+];
+
+const keys = {};
+
+// --- SINIFLAR ---
+
+class Player {
+    constructor(id, x, color) {
+        this.id = id;
+        this.x = x;
+        this.y = 0;
+        this.vx = 0;
+        this.vy = 0;
+        this.radius = 10;
+        this.color = color;
+        this.hp = 100;
+        this.maxHp = 100;
+        this.fuel = 100;
+        this.angle = id === 1 ? 315 : 225;
+        this.weaponIdx = 0;
+        this.cooldown = 0;
+        this.weps = JSON.parse(JSON.stringify(WEAPONS)); // Kendi cephanesi
+    }
+
+    update() {
+        if (this.hp <= 0) return;
+
+        // Yatay
+        this.x += this.vx;
+        this.vx *= 0.9; // Sürtünme
+
+        // Dikey
+        this.vy += GRAVITY;
+        this.y += this.vy;
+
+        // Zemin Kontrolü
+        let groundY = getTerrainHeight(this.x);
+        if (this.y + this.radius > groundY) {
+            this.y = groundY - this.radius;
+            this.vy = 0;
+            // Yakıt dolumu (yerdeyken)
+            if (this.fuel < 100) this.fuel += 0.5;
+        }
+
+        // Harita Sınırları
+        if (this.x < 0) this.x = 0;
+        if (this.x > W) this.x = W;
+        if (this.y > H + 50) this.hp = 0; // Boşluğa düşüş
+
+        // Cooldown
+        if (this.cooldown > 0) this.cooldown--;
+    }
+
+    useJetpack() {
+        if (this.fuel > 0) {
+            this.vy -= 0.5; // Yukarı itiş
+            this.fuel -= 1.5;
+            
+            // Efekt
+            particles.push(new Particle(this.x, this.y + 10, (Math.random()-0.5), 2, 3, '#f39c12', 10));
+            if (Math.random() < 0.2) Sound.play('jetpack');
+        }
+    }
+
+    fire() {
+        if (this.cooldown > 0 || this.hp <= 0) return;
+        
+        let w = this.weps[this.weaponIdx];
+        if (w.ammo <= 0) return; // Mermi bitti
+
+        w.ammo--;
+        this.cooldown = w.cd;
+
+        const rad = (this.angle * Math.PI) / 180;
+        const mx = this.x + Math.cos(rad) * 20;
+        const my = this.y + Math.sin(rad) * 20;
+
+        if (w.type === 'signal') {
+            // Hava Saldırısı Çağır
+            callAirStrike(this.x, this.id);
+        } else if (w.type === 'shotgun') {
+            Sound.play('shoot_heavy');
+            for(let i=0; i<4; i++) {
+                let spread = (Math.random() - 0.5) * 0.4;
+                bullets.push(new Bullet(mx, my, Math.cos(rad+spread)*w.speed, Math.sin(rad+spread)*w.speed, w, this.id));
+            }
+        } else {
+            Sound.play(w.type === 'ray' ? 'shoot_sniper' : 'shoot_heavy');
+            // Sniper rüzgardan etkilenmez (gravity az), Bazuka etkilenir
+            bullets.push(new Bullet(mx, my, Math.cos(rad)*w.speed, Math.sin(rad)*w.speed, w, this.id));
+        }
+
+        // Geri tepme
+        this.vx -= Math.cos(rad) * 3;
+    }
+}
+
+class Bullet {
+    constructor(x, y, vx, vy, type, ownerId) {
+        this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+        this.type = type; this.ownerId = ownerId;
+        this.active = true;
+    }
+    update() {
+        if (!this.active) return;
+        
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // Fizik (Sniper düz gider)
+        if (this.type.type !== 'ray') {
+            this.vy += GRAVITY;
+            this.vx += wind * 0.02; // Rüzgar etkisi
+            // Duman izi
+            if(Math.random()>0.5) particles.push(new Particle(this.x, this.y, 0,0, 2, 'rgba(100,100,100,0.3)', 20));
+        } else {
+             // Sniper izi
+             particles.push(new Particle(this.x, this.y, 0,0, 1, 'rgba(255,0,0,0.2)', 10));
+        }
+
+        // Sınır
+        if (this.x < 0 || this.x > W || this.y > H) this.active = false;
+
+        // Çarpışma: Zemin
+        let gy = getTerrainHeight(this.x);
+        if (this.y >= gy) {
+            this.explode(this.x, gy);
+        }
+
+        // Çarpışma: Oyuncu
+        players.forEach(p => {
+            if (p.hp > 0 && p.id !== this.ownerId) {
+                let dist = Math.hypot(this.x - p.x, this.y - p.y);
+                if (dist < p.radius + 5) {
+                    this.explode(this.x, this.y);
+                }
+            }
+        });
+    }
+
+    explode(x, y) {
+        this.active = false;
+        
+        // Hasar
+        players.forEach(p => {
+            let dist = Math.hypot(p.x - x, p.y - y);
+            if (dist < this.type.rad + 10) {
+                let dmg = this.type.dmg * ((this.type.rad+10 - dist)/(this.type.rad+10));
+                if (dmg > 0) {
+                    p.hp -= dmg;
+                    spawnBlood(p.x, p.y, dmg); // KAN EFEKTİ
+                }
+            }
+        });
+
+        // Arazi Hasarı (Sadece patlayıcılar)
+        if (this.type.type === 'explosive') {
+            destroyTerrain(x, this.type.rad);
+            shakeTime = 15;
+            Sound.play('explosion');
+            // Görsel Patlama
+            particles.push(new Particle(x, y, 0,0, this.type.rad, 'rgba(255, 100, 0, 0.8)', 5)); // Flaş
+            for(let i=0; i<15; i++) {
+                particles.push(new Particle(x, y, (Math.random()-0.5)*10, (Math.random()-1)*10, Math.random()*5, 'orange', 40));
+                particles.push(new Particle(x, y, (Math.random()-0.5)*5, (Math.random()-1)*5, Math.random()*8, 'grey', 60));
+            }
+        } else if (this.type.type === 'ray' || this.type.type === 'shotgun') {
+            // Küçük toz
+            for(let i=0; i<5; i++) particles.push(new Particle(x, y, (Math.random()-0.5)*3, -Math.random()*3, 2, 'white', 10));
+        }
+    }
+}
+
+class Particle {
+    constructor(x, y, vx, vy, size, color, life) {
+        this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+        this.size = size; this.color = color; this.life = life; this.maxLife = life;
+        this.gravity = 0;
+    }
+    update() {
+        this.x += this.vx; this.y += this.vy + this.gravity;
+        this.life--;
+    }
+    draw() {
+        ctx.globalAlpha = this.life / this.maxLife;
+        ctx.fillStyle = this.color;
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1;
+    }
+}
+
+class AirStrike {
+    constructor(targetX, ownerId) {
+        this.x = -100; // Soldan başlar
+        this.y = 50;
+        this.targetX = targetX;
+        this.vx = 8;
+        this.ownerId = ownerId;
+        this.dropped = false;
+        this.active = true;
+        Sound.play('plane');
+        document.getElementById('warning-msg').style.display = 'block';
+    }
+    update() {
+        this.x += this.vx;
+        
+        // Bomba bırakma
+        if (Math.abs(this.x - this.targetX) < 50 && !this.dropped) {
+            // 3 tane napalm bombası
+            for(let i=0; i<3; i++) {
+                setTimeout(() => {
+                    bullets.push(new Bullet(this.x + (i*30), this.y, 2, 5, {type: 'explosive', dmg: 35, rad: 50}, this.ownerId));
+                }, i * 200);
+            }
+            this.dropped = true;
+        }
+
+        if (this.x > W + 200) {
+            this.active = false;
+            document.getElementById('warning-msg').style.display = 'none';
+        }
+    }
+    draw() {
+        // Jet çizimi (Basit üçgen)
+        ctx.fillStyle = '#555';
+        ctx.beginPath();
+        ctx.moveTo(this.x + 30, this.y);
+        ctx.lineTo(this.x - 20, this.y - 10);
+        ctx.lineTo(this.x - 20, this.y + 10);
+        ctx.fill();
+        // Motor ateşi
+        ctx.fillStyle = 'orange';
+        ctx.beginPath();
+        ctx.arc(this.x - 22, this.y, 5, 0, Math.PI*2);
+        ctx.fill();
+    }
+}
+
+class Crate {
+    constructor() {
+        this.x = Math.random() * (W - 100) + 50;
+        this.y = -50;
+        this.vy = 2;
+        this.active = true;
+        this.type = Math.random() < 0.5 ? 'HP' : (Math.random() < 0.5 ? 'AMMO' : 'FUEL');
+    }
+    update() {
+        this.y += this.vy;
+        
+        // Salınım (Paraşüt efekti)
+        this.x += Math.sin(this.y * 0.05) * 1;
+
+        let gy = getTerrainHeight(this.x);
+        if (this.y >= gy - 15) {
+            this.y = gy - 15;
+            // Oyuncuya değdi mi?
+            players.forEach(p => {
+                if (Math.abs(p.x - this.x) < 20 && Math.abs(p.y - this.y) < 30) {
+                    this.collect(p);
+                }
+            });
+        }
+    }
+    collect(p) {
+        this.active = false;
+        if (this.type === 'HP') { p.hp = Math.min(100, p.hp + 40); }
+        if (this.type === 'FUEL') { p.fuel = 100; }
+        if (this.type === 'AMMO') { 
+            // Tüm silahlara + cephane
+            p.weps.forEach(w => { if(w.ammo < 100) w.ammo += 2; });
+        }
+        // Efekt
+        for(let i=0; i<10; i++) particles.push(new Particle(this.x, this.y, 0, -2, 2, 'yellow', 20));
+    }
+    draw() {
+        // Kutu
+        ctx.fillStyle = '#8e44ad';
+        if(this.type === 'HP') ctx.fillStyle = '#2ecc71';
+        if(this.type === 'FUEL') ctx.fillStyle = '#e67e22';
+        ctx.fillRect(this.x - 10, this.y - 10, 20, 20);
+        ctx.strokeStyle = '#fff';
+        ctx.strokeRect(this.x - 10, this.y - 10, 20, 20);
+        // Harf
+        ctx.fillStyle = 'white';
+        ctx.font = '12px Courier';
+        ctx.textAlign = 'center';
+        ctx.fillText(this.type[0], this.x, this.y + 5);
+        // Paraşüt (Sadece havadaysa)
+        if (this.y < getTerrainHeight(this.x) - 16) {
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y - 10);
+            ctx.lineTo(this.x - 20, this.y - 40);
+            ctx.lineTo(this.x + 20, this.y - 40);
+            ctx.closePath();
+            ctx.strokeStyle = 'white';
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.fill();
+        }
+    }
+}
+
+// --- YARDIMCI FONKSİYONLAR ---
+
+function generateTerrain() {
+    // Gürültülü ve engebeli arazi (Perlin noise benzeri basit bir şey)
+    let y = H / 2 + 100;
+    let slope = 0;
+    for (let x = 0; x < W; x++) {
+        slope += (Math.random() - 0.5) * 1.5;
+        if (slope > 2) slope = 2;
+        if (slope < -2) slope = -2;
+        y += slope;
+        // Düzeltici
+        if (y < 200) y += 2;
+        if (y > H - 50) y -= 2;
+        terrain[x] = y;
+    }
+}
+
+function getTerrainHeight(x) {
+    if (x < 0) x = 0; if (x >= W) x = W - 1;
+    return terrain[Math.floor(x)];
+}
+
+function destroyTerrain(cx, r) {
+    for (let i = -r; i <= r; i++) {
+        let x = Math.floor(cx + i);
+        if (x >= 0 && x < W) {
+            let depth = Math.sqrt(r*r - i*i);
+            terrain[x] += depth; // Aşağı indir
+        }
+    }
+}
+
+function spawnBlood(x, y, amount) {
+    // KAN Sıçraması
+    for(let i=0; i<amount; i++) {
+        let p = new Particle(x, y, (Math.random()-0.5)*8, (Math.random()-1)*8, Math.random()*3, '#a00', 300);
+        p.gravity = 0.5; // Kan düşer
+        particles.push(p);
+    }
+}
+
+function callAirStrike(targetX, ownerId) {
+    airStrikes.push(new AirStrike(targetX, ownerId));
+}
+
+function updateDecalsAndParticles() {
+    // Parçacıkları güncelle
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.update();
+        
+        // Kan yere değerse "Decal" (İz) olur
+        if (p.gravity > 0 && p.y >= getTerrainHeight(p.x)) {
+            decals.push({x: p.x, y: getTerrainHeight(p.x), size: p.size * 2, color: '#600'});
+            particles.splice(i, 1);
+        } else if (p.life <= 0) {
+            particles.splice(i, 1);
+        }
+    }
+    // İzleri sınırlı tut (Performans)
+    if (decals.length > 200) decals.shift();
+}
+
+// --- ANA DÖNGÜ VE KONTROL ---
+
+function init() {
+    generateTerrain();
+    players.push(new Player(1, 100, '#3498db')); // P1 Mavi
+    players.push(new Player(2, W - 100, '#e74c3c')); // P2 Kırmızı
+    
+    // Girdi Dinleyicileri
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+    
+    loop();
+}
+
+function handleInput() {
+    const p1 = players[0];
+    const p2 = players[1];
+
+    // P1
+    if (keys['KeyA']) { p1.vx -= 0.5; p1.angle = 225; }
+    if (keys['KeyD']) { p1.vx += 0.5; p1.angle = 315; }
+    if (keys['KeyW']) p1.useJetpack(); // JETPACK
+    if (keys['Space']) p1.fire();
+    if (keys['Digit1']) p1.weaponIdx = 0;
+    if (keys['Digit2']) p1.weaponIdx = 1;
+    if (keys['Digit3']) p1.weaponIdx = 2;
+    if (keys['Digit4']) p1.weaponIdx = 3;
+    
+    // P1 Nişan
+    if (keys['KeyS']) p1.angle += 2; // Basit açı değişimi yerine yukarı aşağı da olabilir ama Jetpack "W" olduğu için S ile açı değiştirelim
+    
+    // P2
+    if (keys['ArrowLeft']) { p2.vx -= 0.5; p2.angle = 225; }
+    if (keys['ArrowRight']) { p2.vx += 0.5; p2.angle = 315; }
+    if (keys['ArrowUp']) p2.useJetpack(); // JETPACK
+    if (keys['Enter']) p2.fire();
+    if (keys['Digit8']) p2.weaponIdx = 0;
+    if (keys['Digit9']) p2.weaponIdx = 1;
+    if (keys['Digit0']) p2.weaponIdx = 2;
+    if (keys['Minus']) p2.weaponIdx = 3;
+    
+    // P2 Nişan
+    if (keys['ArrowDown']) p2.angle += 2;
+}
+
+function updateGame() {
+    if (gameOver) return;
+
+    // Rüzgar Değişimi
+    if(Math.random() < 0.02) wind += (Math.random()-0.5);
+    wind = Math.max(-10, Math.min(10, wind));
+
+    // Kutu Spawn
+    if (Math.random() < 0.002) crates.push(new Crate());
+
+    handleInput();
+    players.forEach(p => p.update());
+    bullets.forEach(b => b.update());
+    airStrikes.forEach(a => a.update());
+    crates.forEach(c => c.update());
+    updateDecalsAndParticles();
+
+    // Temizlik
+    bullets = bullets.filter(b => b.active);
+    airStrikes = airStrikes.filter(a => a.active);
+    crates = crates.filter(c => c.active);
+
+    // Oyun Bitti mi?
+    if (players[0].hp <= 0 || players[1].hp <= 0) {
+        gameOver = true;
+        setTimeout(() => alert("OPERASYON TAMAMLANDI. SAYFAYI YENİLE."), 100);
+    }
+}
+
+function drawGame() {
+    // Sarsıntı
+    let sx = 0, sy = 0;
+    if (shakeTime > 0) {
+        sx = (Math.random()-0.5)*shakeTime;
+        sy = (Math.random()-0.5)*shakeTime;
+        shakeTime--;
+    }
+    ctx.setTransform(1,0,0,1,sx,sy);
+
+    ctx.clearRect(0, 0, W, H);
+
+    // Arka Plan (Kirli Gökyüzü)
+    let grad = ctx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0, '#1a1a1a');
+    grad.addColorStop(1, '#2c3e50');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,W,H);
+
+    // Yağmur
+    ctx.strokeStyle = 'rgba(200,200,255,0.1)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for(let i=0; i<100; i++) {
+        let rx = Math.random()*W;
+        let ry = Math.random()*H;
+        ctx.moveTo(rx, ry);
+        ctx.lineTo(rx - wind*2, ry + 15);
+    }
+    ctx.stroke();
+
+    // Arazi
+    ctx.fillStyle = '#2d3436';
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    for(let x=0; x<W; x++) ctx.lineTo(x, terrain[x]);
+    ctx.lineTo(W, H);
+    ctx.fill();
+    // Arazi Dokusu (Basit)
+    ctx.strokeStyle = '#000';
+    ctx.globalAlpha = 0.2;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Kan İzleri (Decals)
+    decals.forEach(d => {
+        ctx.fillStyle = d.color;
+        ctx.beginPath(); ctx.arc(d.x, d.y, d.size/2, 0, Math.PI*2); ctx.fill();
+    });
+
+    // Oyuncular
+    players.forEach(p => {
+        if(p.hp <= 0) return;
+        // Karakter
+        ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2); ctx.fill();
+        // Kask/Gözlük
+        ctx.fillStyle = '#000';
+        ctx.fillRect(p.x - 5, p.y - 4, 10, 3);
+        // Namlu
+        let rad = (p.angle * Math.PI)/180;
+        ctx.strokeStyle = '#555'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(p.x, p.y); 
+        ctx.lineTo(p.x+Math.cos(rad)*22, p.y+Math.sin(rad)*22); ctx.stroke();
+        
+        // Jetpack Alevi (Eğer uçuyorsa)
+        if (p.y < getTerrainHeight(p.x) - 5) {
+             ctx.fillStyle = 'orange';
+             ctx.beginPath(); ctx.arc(p.x, p.y+10, 4 + Math.random()*3, 0, Math.PI*2); ctx.fill();
+        }
+    });
+
+    crates.forEach(c => c.draw());
+    airStrikes.forEach(a => a.draw());
+    particles.forEach(p => p.draw());
+
+    // UI Güncelleme
+    updateUI();
+    
+    ctx.setTransform(1,0,0,1,0,0);
+}
+
+function updateUI() {
+    // HTML Arayüzünü Güncelle
+    players.forEach((p, i) => {
+        let prefix = i===0 ? 'p1' : 'p2';
+        document.getElementById(prefix+'-hp').style.width = p.hp + '%';
+        document.getElementById(prefix+'-fuel').style.width = p.fuel + '%';
+        // Cooldown ters mantık (dolarken)
+        let cdPerc = Math.max(0, (1 - p.cooldown/p.weps[p.weaponIdx].cd)*100);
+        document.getElementById(prefix+'-cd').style.width = cdPerc + '%';
+        
+        // Aktif Silahı İşaretle
+        for(let w=0; w<4; w++) {
+            let el = document.getElementById(prefix+'-w'+w);
+            if(el) {
+                el.className = 'weapon-item ' + (p.weaponIdx === w ? 'active' : '');
+                // Mermi sayısını yaz (Sonsuzsa ∞)
+                let ammo = p.weps[w].ammo;
+                if(ammo > 999) ammo = '∞';
+                el.innerText = (w+(i===0?1:8)===10?0:(w+(i===0?1:8))).toString().replace('-','') + ". " + p.weps[w].name + " ("+ammo+")";
+            }
+        }
+    });
+
+    document.getElementById('wind-val').innerText = Math.abs(wind).toFixed(1);
+    document.getElementById('wind-dir').innerHTML = wind > 0 ? '&rarr;' : '&larr;';
+}
+
+function loop() {
+    updateGame();
+    drawGame();
+    if(!gameOver) requestAnimationFrame(loop);
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kuantum Labirent - Claude AI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            min-height: 100vh;
+            overflow: hidden;
+            color: white;
+        }
+
+        .game-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .sidebar {
+            width: 300px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            padding: 30px;
+            border-right: 2px solid rgba(255, 255, 255, 0.1);
+            overflow-y: auto;
+        }
+
+        .main-game {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .title {
+            font-size: 2em;
+            margin-bottom: 10px;
+            color: #FF6B6B;
+            text-shadow: 0 0 20px rgba(255, 107, 107, 0.5);
+        }
+
+        .stats {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            font-size: 1.1em;
+        }
+
+        .stat-value {
+            color: #4ecdc4;
+            font-weight: bold;
+        }
+
+        .controls {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .controls h3 {
+            margin-bottom: 15px;
+            color: #FF6B6B;
+        }
+
+        .control-row {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #FF6B6B, #C44569);
+            color: white;
+            flex: 1;
+        }
+
+        .btn-primary:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 20px rgba(255, 107, 107, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            flex: 1;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .abilities {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        .abilities h3 {
+            margin-bottom: 15px;
+            color: #4ecdc4;
+        }
+
+        .ability {
+            background: rgba(78, 205, 196, 0.2);
+            padding: 10px;
+            border-radius: 8px;
+            margin: 8px 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .ability:hover {
+            border-color: #4ecdc4;
+            background: rgba(78, 205, 196, 0.3);
+        }
+
+        .ability.cooldown {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .ability-name {
+            font-weight: bold;
+            color: #4ecdc4;
+        }
+
+        .ability-desc {
+            font-size: 0.9em;
+            margin-top: 5px;
+            opacity: 0.8;
+        }
+
+        .canvas-container {
+            position: relative;
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            background: #000;
+        }
+
+        .game-info {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 1.2em;
+        }
+
+        .level-complete {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            background: rgba(0, 0, 0, 0.95);
+            padding: 40px;
+            border-radius: 20px;
+            border: 3px solid #FF6B6B;
+            z-index: 1000;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .level-complete.show {
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        .level-complete h2 {
+            font-size: 3em;
+            color: #4ecdc4;
+            margin-bottom: 20px;
+            text-shadow: 0 0 20px rgba(78, 205, 196, 0.5);
+        }
+
+        .particle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: white;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                display: none;
+            }
+        }
+
+        .instructions {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            font-size: 0.9em;
+        }
+
+        .instructions h4 {
+            color: #FF6B6B;
+            margin-bottom: 10px;
+        }
+
+        .key {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 4px 8px;
+            border-radius: 5px;
+            margin: 2px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="sidebar">
+            <h1 class="title">🌌 Kuantum Labirent</h1>
+            
+            <div class="stats">
+                <div class="stat-item">
+                    <span>Seviye:</span>
+                    <span class="stat-value" id="level">1</span>
+                </div>
+                <div class="stat-item">
+                    <span>Enerji:</span>
+                    <span class="stat-value" id="energy">100</span>
+                </div>
+                <div class="stat-item">
+                    <span>Skor:</span>
+                    <span class="stat-value" id="score">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>Parçacıklar:</span>
+                    <span class="stat-value" id="particles">0</span>
+                </div>
+            </div>
+
+            <div class="controls">
+                <h3>🎮 Kontroller</h3>
+                <div class="control-row">
+                    <button class="btn btn-primary" onclick="game.restart()">Yeni Oyun</button>
+                </div>
+                <div class="control-row">
+                    <button class="btn btn-secondary" onclick="game.pause()">Duraklat</button>
+                    <button class="btn btn-secondary" onclick="game.toggleSound()">🔊 Ses</button>
+                </div>
+            </div>
+
+            <div class="abilities">
+                <h3>⚡ Kuantum Yetenekler</h3>
+                <div class="ability" onclick="game.useAbility('teleport')" id="teleport">
+                    <div class="ability-name">🌀 Işınlanma</div>
+                    <div class="ability-desc">Rastgele güvenli bir noktaya ışınlan (30 enerji)</div>
+                </div>
+                <div class="ability" onclick="game.useAbility('shield')" id="shield">
+                    <div class="ability-name">🛡️ Enerji Kalkanı</div>
+                    <div class="ability-desc">5 saniye hasarsız kal (40 enerji)</div>
+                </div>
+                <div class="ability" onclick="game.useAbility('vision')" id="vision">
+                    <div class="ability-name">👁️ Kuantum Görüş</div>
+                    <div class="ability-desc">Tüm labirenti gör (20 enerji)</div>
+                </div>
+                <div class="ability" onclick="game.useAbility('speed')" id="speed">
+                    <div class="ability-name">⚡ Hız Artışı</div>
+                    <div class="ability-desc">5 saniye hızlan (25 enerji)</div>
+                </div>
+            </div>
+
+            <div class="instructions">
+                <h4>📖 Nasıl Oynanır?</h4>
+                <p>
+                    <span class="key">W A S D</span> veya <span class="key">↑ ← ↓ →</span> ile hareket et
+                </p>
+                <p style="margin-top: 10px;">
+                    🟢 Yeşil parçacıkları topla<br>
+                    🔵 Mavi kapıya ulaş<br>
+                    🔴 Kırmızı düşmanlardan kaçın<br>
+                    ⚫ Siyah duvarlara çarpma
+                </p>
+            </div>
+        </div>
+
+        <div class="main-game">
+            <div class="canvas-container">
+                <canvas id="gameCanvas" width="800" height="600"></canvas>
+            </div>
+            <div class="game-info" id="gameInfo">
+                Labirenti keşfet ve çıkışı bul! 🌟
+            </div>
+        </div>
+    </div>
+
+    <div class="level-complete" id="levelComplete">
+        <h2>🎉 Seviye Tamamlandı!</h2>
+        <p id="levelStats"></p>
+        <button class="btn btn-primary" onclick="game.nextLevel()" style="margin-top: 20px;">Sonraki Seviye</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const game = {
+            player: { x: 50, y: 50, size: 20, speed: 3, energy: 100 },
+            level: 1,
+            score: 0,
+            particles: [],
+            enemies: [],
+            walls: [],
+            exit: null,
+            keys: {},
+            shield: false,
+            speedBoost: false,
+            vision: false,
+            paused: false,
+            collectedParticles: 0,
+
+            init() {
+                this.generateLevel();
+                this.setupControls();
+                this.gameLoop();
+            },
+
+            generateLevel() {
+                this.walls = [];
+                this.particles = [];
+                this.enemies = [];
+                
+                // Labirent duvarları
+                const complexity = Math.min(10 + this.level * 2, 30);
+                for (let i = 0; i < complexity; i++) {
+                    this.walls.push({
+                        x: Math.random() * (canvas.width - 100) + 50,
+                        y: Math.random() * (canvas.height - 100) + 50,
+                        width: Math.random() * 150 + 50,
+                        height: Math.random() * 30 + 10
+                    });
+                }
+
+                // Parçacıklar
+                const particleCount = 5 + this.level;
+                for (let i = 0; i < particleCount; i++) {
+                    let pos = this.findSafePosition();
+                    this.particles.push({
+                        x: pos.x,
+                        y: pos.y,
+                        size: 10,
+                        glow: 0
+                    });
+                }
+
+                // Düşmanlar
+                const enemyCount = Math.min(2 + Math.floor(this.level / 2), 10);
+                for (let i = 0; i < enemyCount; i++) {
+                    let pos = this.findSafePosition();
+                    this.enemies.push({
+                        x: pos.x,
+                        y: pos.y,
+                        size: 15,
+                        speed: 1 + this.level * 0.2,
+                        angle: Math.random() * Math.PI * 2
+                    });
+                }
+
+                // Çıkış
+                let exitPos = this.findSafePosition();
+                this.exit = {
+                    x: exitPos.x,
+                    y: exitPos.y,
+                    size: 30,
+                    pulse: 0
+                };
+            },
+
+            findSafePosition() {
+                let attempts = 0;
+                while (attempts < 100) {
+                    let x = Math.random() * (canvas.width - 100) + 50;
+                    let y = Math.random() * (canvas.height - 100) + 50;
+                    
+                    let safe = true;
+                    for (let wall of this.walls) {
+                        if (this.checkCollision({x, y, size: 20}, wall)) {
+                            safe = false;
+                            break;
+                        }
+                    }
+                    
+                    if (safe) return {x, y};
+                    attempts++;
+                }
+                return {x: 50, y: 50};
+            },
+
+            setupControls() {
+                document.addEventListener('keydown', (e) => {
+                    this.keys[e.key.toLowerCase()] = true;
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    this.keys[e.key.toLowerCase()] = false;
+                });
+            },
+
+            update() {
+                if (this.paused) return;
+
+                // Oyuncu hareketi
+                let speed = this.speedBoost ? this.player.speed * 2 : this.player.speed;
+                
+                let newX = this.player.x;
+                let newY = this.player.y;
+
+                if (this.keys['w'] || this.keys['arrowup']) newY -= speed;
+                if (this.keys['s'] || this.keys['arrowdown']) newY += speed;
+                if (this.keys['a'] || this.keys['arrowleft']) newX -= speed;
+                if (this.keys['d'] || this.keys['arrowright']) newX += speed;
+
+                // Duvar çarpışması kontrolü
+                let canMove = true;
+                for (let wall of this.walls) {
+                    if (this.checkCollision({x: newX, y: newY, size: this.player.size}, wall)) {
+                        canMove = false;
+                        break;
+                    }
+                }
+
+                if (canMove) {
+                    this.player.x = Math.max(this.player.size, Math.min(canvas.width - this.player.size, newX));
+                    this.player.y = Math.max(this.player.size, Math.min(canvas.height - this.player.size, newY));
+                }
+
+                // Parçacık toplama
+                this.particles = this.particles.filter(p => {
+                    if (this.distance(this.player, p) < this.player.size + p.size) {
+                        this.collectedParticles++;
+                        this.score += 50;
+                        this.player.energy = Math.min(100, this.player.energy + 10);
+                        this.updateUI();
+                        return false;
+                    }
+                    p.glow = (p.glow + 0.1) % (Math.PI * 2);
+                    return true;
+                });
+
+                // Düşman hareketi ve çarpışma
+                for (let enemy of this.enemies) {
+                    // Oyuncuya doğru hareket
+                    let dx = this.player.x - enemy.x;
+                    let dy = this.player.y - enemy.y;
+                    let dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist > 0) {
+                        enemy.x += (dx / dist) * enemy.speed;
+                        enemy.y += (dy / dist) * enemy.speed;
+                    }
+
+                    // Düşman çarpışması
+                    if (!this.shield && this.distance(this.player, enemy) < this.player.size + enemy.size) {
+                        this.player.energy -= 2;
+                        if (this.player.energy <= 0) {
+                            this.gameOver();
+                        }
+                        this.updateUI();
+                    }
+                }
+
+                // Çıkış kontrolü
+                if (this.exit && this.distance(this.player, this.exit) < this.player.size + this.exit.size) {
+                    this.completeLevel();
+                }
+
+                this.exit.pulse = (this.exit.pulse + 0.05) % (Math.PI * 2);
+            },
+
+            draw() {
+                // Arka plan
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Grid efekti
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+                ctx.lineWidth = 1;
+                for (let i = 0; i < canvas.width; i += 40) {
+                    ctx.beginPath();
+                    ctx.moveTo(i, 0);
+                    ctx.lineTo(i, canvas.height);
+                    ctx.stroke();
+                }
+                for (let i = 0; i < canvas.height; i += 40) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, i);
+                    ctx.lineTo(canvas.width, i);
+                    ctx.stroke();
+                }
+
+                // Duvarlar
+                ctx.fillStyle = '#1a1a2e';
+                ctx.strokeStyle = '#FF6B6B';
+                ctx.lineWidth = 2;
+                for (let wall of this.walls) {
+                    ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+                    ctx.strokeRect(wall.x, wall.y, wall.width, wall.height);
+                }
+
+                // Parçacıklar
+                for (let p of this.particles) {
+                    let glowSize = Math.sin(p.glow) * 5;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size + glowSize, 0, Math.PI * 2);
+                    ctx.fillStyle = '#4ecdc4';
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = '#4ecdc4';
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
+
+                // Düşmanlar
+                for (let enemy of this.enemies) {
+                    ctx.beginPath();
+                    ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ff4757';
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#ff4757';
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
+
+                // Çıkış
+                if (this.exit) {
+                    let pulseSize = Math.sin(this.exit.pulse) * 5;
+                    ctx.beginPath();
+                    ctx.arc(this.exit.x, this.exit.y, this.exit.size + pulseSize, 0, Math.PI * 2);
+                    ctx.fillStyle = '#5f27cd';
+                    ctx.shadowBlur = 30;
+                    ctx.shadowColor = '#5f27cd';
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+
+                    ctx.fillStyle = 'white';
+                    ctx.font = '20px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('EXIT', this.exit.x, this.exit.y + 5);
+                }
+
+                // Oyuncu
+                ctx.beginPath();
+                ctx.arc(this.player.x, this.player.y, this.player.size, 0, Math.PI * 2);
+                
+                if (this.shield) {
+                    ctx.strokeStyle = '#00d2ff';
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = '#00d2ff';
+                }
+                
+                ctx.fillStyle = this.speedBoost ? '#ffa502' : '#ffffff';
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Enerji barı
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(10, 10, 200, 20);
+                
+                let energyColor = this.player.energy > 50 ? '#4ecdc4' : '#ff4757';
+                ctx.fillStyle = energyColor;
+                ctx.fillRect(10, 10, this.player.energy * 2, 20);
+                
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(10, 10, 200, 20);
+            },
+
+            gameLoop() {
+                this.update();
+                this.draw();
+                requestAnimationFrame(() => this.gameLoop());
+            },
+
+            checkCollision(obj1, obj2) {
+                return obj1.x < obj2.x + obj2.width &&
+                       obj1.x + obj1.size > obj2.x &&
+                       obj1.y < obj2.y + obj2.height &&
+                       obj1.y + obj1.size > obj2.y;
+            },
+
+            distance(obj1, obj2) {
+                return Math.sqrt((obj1.x - obj2.x) ** 2 + (obj1.y - obj2.y) ** 2);
+            },
+
+            useAbility(type) {
+                if (this.paused) return;
+
+                const costs = { teleport: 30, shield: 40, vision: 20, speed: 25 };
+                
+                if (this.player.energy < costs[type]) {
+                    alert('Yeterli enerji yok!');
+                    return;
+                }
+
+                this.player.energy -= costs[type];
+                this.updateUI();
+
+                switch(type) {
+                    case 'teleport':
+                        let pos = this.findSafePosition();
+                        this.player.x = pos.x;
+                        this.player.y = pos.y;
+                        break;
+                    case 'shield':
+                        this.shield = true;
+                        setTimeout(() => this.shield = false, 5000);
+                        break;
+                    case 'vision':
+                        this.vision = true;
+                        setTimeout(() => this.vision = false, 5000);
+                        break;
+                    case 'speed':
+                        this.speedBoost = true;
+                        setTimeout(() => this.speedBoost = false, 5000);
+                        break;
+                }
+            },
+
+            updateUI() {
+                document.getElementById('level').textContent = this.level;
+                document.getElementById('energy').textContent = Math.floor(this.player.energy);
+                document.getElementById('score').textContent = this.score;
+                document.getElementById('particles').textContent = this.collectedParticles;
+            },
+
+            completeLevel() {
+                document.getElementById('levelStats').innerHTML = `
+                    Toplanan Parçacık: ${this.collectedParticles}<br>
+                    Kalan Enerji: ${Math.floor(this.player.energy)}<br>
+                    Bonus: +${this.level * 100}
+                `;
+                
+                this.score += this.level * 100;
+                document.getElementById('levelComplete').classList.add('show');
+            },
+
+            nextLevel() {
+                document.getElementById('levelComplete').classList.remove('show');
+                this.level++;
+                this.player.x = 50;
+                this.player.y = 50;
+                this.player.energy = 100;
+                this.collectedParticles = 0;
+                this.generateLevel();
+                this.updateUI();
+            },
+
+            restart() {
+                this.level = 1;
+                this.score = 0;
+                this.collectedParticles = 0;
+                this.player.x = 50;
+                this.player.y = 50;
+                this.player.energy = 100;
+                this.generateLevel();
+                this.updateUI();
+            },
+
+            pause() {
+                this.paused = !this.paused;
+                document.getElementById('gameInfo').textContent = this.paused ? 'DURAKLATILDI' : 'Labirenti keşfet ve çıkışı bul! 🌟';
+            },
+
+            toggleSound() {
+                alert('Ses özelliği yakında eklenecek!');
+            },
+
+            gameOver() {
+                alert(`Oyun Bitti! Skor: ${this.score}`);
+                this.restart();
+            }
+        };
+
+        game.init();
+    </script>
+</body>
+</html>
